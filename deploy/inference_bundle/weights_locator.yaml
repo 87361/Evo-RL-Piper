@@ -1,0 +1,3 @@
+source: tos_mount
+policy_weights_path: /mnt/tos/openpi_v0/run_001/model.npz
+local_debug_fallback: artifacts/openpi_v0/run_001/model.npz

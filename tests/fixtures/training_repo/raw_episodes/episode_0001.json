@@ -1,0 +1,47 @@
+{
+  "episode_id": "ep-0001",
+  "task_id": "pick_place_min",
+  "success": false,
+  "steps": [
+    {
+      "t": 0,
+      "obs_image_refs": {
+        "front": "images/ep-0001/front_0000.jpg"
+      },
+      "obs_state": [0.0, 0.1, 0.2],
+      "action": [0.01, 0.02],
+      "intervention_flag": false,
+      "terminal": false
+    },
+    {
+      "t": 1,
+      "obs_image_refs": {
+        "front": "images/ep-0001/front_0001.jpg"
+      },
+      "obs_state": [0.1, 0.2, 0.3],
+      "action": [0.02, 0.03],
+      "intervention_flag": false,
+      "terminal": false
+    },
+    {
+      "t": 2,
+      "obs_image_refs": {
+        "front": "images/ep-0001/front_0002.jpg"
+      },
+      "obs_state": [0.2, 0.3, 0.4],
+      "action": [0.03, 0.04],
+      "intervention_flag": true,
+      "terminal": false
+    },
+    {
+      "t": 3,
+      "obs_image_refs": {
+        "front": "images/ep-0001/front_0003.jpg"
+      },
+      "obs_state": [0.3, 0.4, 0.5],
+      "action": [0.04, 0.05],
+      "intervention_flag": true,
+      "terminal": true
+    }
+  ]
+}

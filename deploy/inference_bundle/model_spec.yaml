@@ -1,0 +1,14 @@
+format_version: v0.1.0
+backend: openpi
+weights_format: npz
+weights_file_hint: model.npz
+input:
+  obs_state_dim: 2
+output:
+  action_dim: 2
+preprocess:
+  obs_mean_key: obs_mean
+  obs_std_key: obs_std
+postprocess:
+  action_mean_key: action_mean
+  action_std_key: action_std

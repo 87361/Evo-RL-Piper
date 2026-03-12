@@ -1,0 +1,4 @@
+artifact_dir: artifacts/openpi_v0/run_001
+artifact_weights_file: model.npz
+output_dir: deploy/inference_bundle
+tos_weights_path: /mnt/tos/openpi_v0/run_001/model.npz

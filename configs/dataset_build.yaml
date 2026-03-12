@@ -1,0 +1,9 @@
+raw_data_root: data/raw_episodes
+output_root: data/processed/openpi_v0
+schema_version: v0.1.0
+val_ratio: 0.1
+split_mode: episode
+pre_intervention_k: 3
+shard_size: 2048
+random_seed: 42
+
