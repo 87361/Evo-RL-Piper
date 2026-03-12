@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from training_repo.backend_openpi.dataloader import build_training_arrays
 from training_repo.backend_openpi.dataset_adapter import OpenPIDatasetAdapter
 from training_repo.backend_openpi.sampler import ProportionalBucketSampler, SamplerConfig
 from training_repo.common.io import write_json
@@ -22,20 +23,12 @@ class OpenPIBackend(TrainingBackend):
 
         adapter = OpenPIDatasetAdapter(dataset_root)
         train_samples = adapter.load_split("train")
-        if not train_samples:
-            raise ValueError("No train samples found. Build dataset first.")
+        x_all, y_all, sample_types = build_training_arrays(train_samples, adapter.stats)
 
         obs_mean = np.asarray(adapter.stats["obs_state"]["mean"], dtype=np.float64)
         obs_std = np.asarray(adapter.stats["obs_state"]["std"], dtype=np.float64)
         action_mean = np.asarray(adapter.stats["action"]["mean"], dtype=np.float64)
         action_std = np.asarray(adapter.stats["action"]["std"], dtype=np.float64)
-
-        x_all = np.asarray([sample["obs_state"] for sample in train_samples], dtype=np.float64)
-        y_all = np.asarray([sample["action"] for sample in train_samples], dtype=np.float64)
-        x_all = (x_all - obs_mean) / obs_std
-        y_all = (y_all - action_mean) / action_std
-
-        sample_types = [sample["sample_type"] for sample in train_samples]
         sampler = ProportionalBucketSampler(
             sample_types,
             SamplerConfig(
