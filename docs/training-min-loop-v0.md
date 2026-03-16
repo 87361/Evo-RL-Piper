@@ -123,3 +123,75 @@ TODO:实现 inference bundle 导出与可复制交付结构
 3. **导出与推理对齐**：实现 `export`，产出 `inference_bundle` 并本地跑通离线推理 smoke test。
 4. **交付验证**：按 `README_deploy.md` 在“模拟 TeleManipulation 目录”中拷贝运行，验证权重路径约定与接口稳定。
 
+## J. 当前进展同步（260313）
+
+- **dataset build 最小闭环**已通过：
+  - 相对路径解析
+  - episode 级 split
+  - 全局唯一 `sample_id = <episode_id>:<t>`
+  - OpenPI 最小可读契约字段（`sample_id/obs_state/action/sample_type/label_source`）
+- **OpenPI 最小训练 smoke 闭环**已补齐并通过：
+  - 复用 `OpenPIDatasetAdapter`、`ProportionalBucketSampler`、`OpenPIBackend`
+  - 新增 `src/training_repo/backend_openpi/dataloader.py`，仅做数组准备函数收口（无新抽象层）
+  - `backend.py` 改为复用该函数，保留现有 sampler 与训练循环
+  - 新增 `tests/training_repo/test_train_openpi_smoke.py`
+  - 验证链路：`dataset package -> adapter -> sampler -> 1 epoch/1 step training -> artifact 落盘`
+  - 验证产物：`model.npz`、`metrics.json`、`train_config_snapshot.json`
+  - 验证约束：训练过程不回写 dataset build 产物（文件哈希前后一致）
+- **采样职责边界保持不变**：
+  - APO 比例采样仅在训练侧 sampler 生效
+  - 不回写到 dataset build
+- **本轮未扩展范围**：
+  - 未新增 `scripts/smoke_train_openpi.py`
+  - 未扩展 resume、多卡、RLinf、真机、完整 DataLoader 分层
+
+复验命令（repo-relative）：
+
+- `PYTHONPATH=src python -m pytest -q --confcutdir=tests/training_repo tests/training_repo/test_dataset_build_min_loop.py`
+- `PYTHONPATH=src python -m pytest -q --confcutdir=tests/training_repo tests/training_repo/test_train_openpi_smoke.py`
+- `PYTHONPATH=src python -m pytest -q --confcutdir=tests/training_repo tests/training_repo/test_dataset_build_min_loop.py tests/training_repo/test_train_openpi_smoke.py`
+
+## K. 260316 数据标注与任务拆分补充
+
+### 1) 标注入口（Headless Web GUI）
+
+- 脚本：`scripts/review_episode_tasks_gui.py`
+- 最小目标：
+  - 批量审阅 episode 的多相机视频
+  - 标注 `A/B/uncertain`
+  - 立即写入 CSV，避免断连丢标注
+- 运行示例：
+
+```bash
+PYTHONPATH=src python scripts/review_episode_tasks_gui.py \
+  --video-root "<dataset>/videos" \
+  --label-csv "<dataset>/task_labels.csv" \
+  --host 127.0.0.1 \
+  --port 18080
+```
+
+### 2) 标注结果回写并构建 A/B 数据集
+
+- 脚本：`scripts/apply_labels_and_build.py`
+- 作用：
+  - 从 CSV 读取 `episode_id -> label`
+  - 批量回写 raw episode 的 `task_id`
+  - 分别构建 `A` 与 `B` 两个独立数据集目录
+- 运行示例：
+
+```bash
+PYTHONPATH=src python scripts/apply_labels_and_build.py \
+  --raw-data-root "<raw_episode_json_root>" \
+  --label-csv "<dataset>/task_labels.csv" \
+  --rewritten-raw-root "<rewritten_root>" \
+  --output-root "<ab_dataset_root>" \
+  --task-a-name shirt_open_middle \
+  --task-b-name shirt_flatten \
+  --drop-non-ab
+```
+
+### 3) 训练侧语义说明
+
+- v0 的 `OpenPIBackend` 当前不消费额外任务标签字段。
+- 因此 A/B 最稳妥方式是分目录分别训练，而非单目录混合后仅在 JSON 打标签。
+
