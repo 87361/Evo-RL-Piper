@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Headless-friendly web GUI for episode task review (A/B)."""
+"""Headless-friendly web GUI for episode task review (multi-category)."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ import uvicorn
 
 
 EP_RE = re.compile(r"(episode_\d+)\.mp4$")
+DEFAULT_CATEGORIES = ["A", "B", "uncertain"]
 
 
 class LabelPayload(BaseModel):
@@ -68,10 +69,45 @@ def write_csv(csv_path: Path, rows: dict[str, dict[str, str]]) -> None:
             writer.writerow(rows[ep])
 
 
+def categories_path(label_csv: Path) -> Path:
+    return label_csv.with_name(f"{label_csv.stem}_categories.json")
+
+
+def load_categories(
+    categories_json: Path, rows: dict[str, dict[str, str]]
+) -> list[str]:
+    categories: list[str] = []
+    if categories_json.exists():
+        data = json.loads(categories_json.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            for item in data.get("categories", []):
+                name = str(item).strip()
+                if name and name not in categories:
+                    categories.append(name)
+    for item in DEFAULT_CATEGORIES:
+        if item not in categories:
+            categories.append(item)
+    for row in rows.values():
+        name = str(row.get("label", "")).strip()
+        if name and name not in categories:
+            categories.append(name)
+    return categories
+
+
+def write_categories(categories_json: Path, categories: list[str]) -> None:
+    categories_json.parent.mkdir(parents=True, exist_ok=True)
+    categories_json.write_text(
+        json.dumps({"categories": categories}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def app_factory(video_root: Path, label_csv: Path) -> FastAPI:
     app = FastAPI(title="Episode Review")
     episodes = discover(video_root)
     labels = load_csv(label_csv)
+    categories_json = categories_path(label_csv)
+    categories = load_categories(categories_json, labels)
     dataset_root = video_root.parent
     info_path = dataset_root / "meta" / "info.json"
     info: dict = {}
@@ -146,7 +182,7 @@ def app_factory(video_root: Path, label_csv: Path) -> FastAPI:
             label = labels.get(ep, {}).get("label", "")
             if lf == "unlabeled" and label:
                 continue
-            if lf in {"A", "B", "uncertain"} and label != lf:
+            if lf not in {"all", "unlabeled"} and label != lf:
                 continue
             items.append(
                 {
@@ -211,20 +247,79 @@ def app_factory(video_root: Path, label_csv: Path) -> FastAPI:
     def save(payload: LabelPayload) -> dict:
         if payload.episode_id not in episodes:
             return {"ok": False, "error": "episode not found"}
-        if payload.label not in {"", "A", "B", "uncertain"}:
-            return {"ok": False, "error": "label invalid"}
+        normalized_label = payload.label.strip()
+        if normalized_label and normalized_label not in categories:
+            categories.append(normalized_label)
+            write_categories(categories_json, categories)
         labels[payload.episode_id] = {
             "episode_id": payload.episode_id,
-            "label": payload.label,
+            "label": normalized_label,
             "note": payload.note,
             "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
         write_csv(label_csv, labels)
-        return {"ok": True}
+        return {"ok": True, "categories": categories}
+
+    @app.delete("/api/label/{episode_id}")
+    def delete_label(episode_id: str) -> dict:
+        if episode_id not in episodes:
+            return {"ok": False, "error": "episode not found"}
+        removed = labels.pop(episode_id, None) is not None
+        write_csv(label_csv, labels)
+        return {"ok": True, "removed": removed}
+
+    @app.get("/api/categories")
+    def list_categories() -> dict:
+        return {"ok": True, "categories": categories}
+
+    @app.post("/api/categories")
+    def add_category(name: str) -> dict:
+        normalized = str(name).strip()
+        if not normalized:
+            return {"ok": False, "error": "category empty"}
+        if normalized in categories:
+            return {"ok": True, "categories": categories}
+        categories.append(normalized)
+        write_categories(categories_json, categories)
+        return {"ok": True, "categories": categories}
+
+    @app.delete("/api/categories/{name}")
+    def delete_category(name: str, purge_labeled_rows: bool = False) -> dict:
+        normalized = str(name).strip()
+        if normalized not in categories:
+            return {"ok": False, "error": "category not found"}
+        if len(categories) <= 1:
+            return {"ok": False, "error": "at least one category required"}
+        categories.remove(normalized)
+        affected = 0
+        if purge_labeled_rows:
+            to_delete = [
+                ep
+                for ep, row in labels.items()
+                if str(row.get("label", "")).strip() == normalized
+            ]
+            for ep in to_delete:
+                labels.pop(ep, None)
+            affected = len(to_delete)
+        else:
+            for row in labels.values():
+                if str(row.get("label", "")).strip() == normalized:
+                    row["label"] = ""
+                    row["updated_at"] = datetime.now(timezone.utc).isoformat(
+                        timespec="seconds"
+                    )
+                    affected += 1
+        write_categories(categories_json, categories)
+        write_csv(label_csv, labels)
+        return {"ok": True, "categories": categories, "affected": affected}
 
     @app.get("/api/meta")
     def meta() -> dict:
-        return {"episode_count": len(episodes), "label_csv": str(label_csv)}
+        return {
+            "episode_count": len(episodes),
+            "label_csv": str(label_csv),
+            "categories": categories,
+        }
 
     return app
 
@@ -245,10 +340,11 @@ video{width:100%;max-height:320px;background:#000}
 .panel{border:1px solid #333;padding:8px;margin-top:10px}
 .small{font-size:12px;color:#bbb}
 .warn{color:#ffb74d}
+#label_buttons button{margin-right:6px;margin-bottom:6px}
 </style></head><body><div class='wrap'>
 <div class='left'>
   <div><input id='q' placeholder='搜索 episode_000123' style='width:180px'/>
-  <select id='lf'><option value='all'>全部</option><option value='unlabeled'>未标注</option><option value='A'>A</option><option value='B'>B</option><option value='uncertain'>不确定</option></select>
+  <select id='lf'></select>
   <button id='refresh'>刷新</button></div>
   <div id='meta' style='margin:8px 0;color:#bbb'></div><div id='list'></div>
 </div>
@@ -256,12 +352,25 @@ video{width:100%;max-height:320px;background:#000}
   <div id='head' style='font-size:18px;margin-bottom:8px'>未选择</div>
   <div id='save_status' style='font-size:12px;color:#8bc34a;margin-bottom:6px'></div>
   <div style='margin-bottom:8px'>
-    <button onclick='setL("A")'>标A(键盘1)</button>
-    <button onclick='setL("B")'>标B(键盘2)</button>
-    <button onclick='setL("uncertain")'>不确定(键盘3)</button>
+    <div id='label_buttons'></div>
+    <select id='cur_label_select' style='margin-right:6px'></select>
+    <button onclick='setFromSelect()'>设为当前类别</button>
     <button onclick='setL("")'>清空(键盘0)</button>
     <button onclick='togglePlay()'>播放/暂停(空格)</button>
+    <select id='playback_rate' onchange='setPlaybackRate(this.value)' style='margin-left:6px'>
+      <option value='1'>1.0x</option>
+      <option value='1.5'>1.5x</option>
+      <option value='2'>2.0x</option>
+    </select>
     <button onclick='save()'>保存(Enter)</button>
+    <button onclick='deleteCurrentLabel()' style='color:#ff8a80'>删除当前条目标注</button>
+  </div>
+  <div style='margin-bottom:8px'>
+    <input id='new_category' placeholder='新增类别名' style='width:180px'/>
+    <button onclick='addCategory()'>新增类别</button>
+    <select id='delete_category_select' style='margin-left:8px'></select>
+    <label class='small'><input id='purge_rows' type='checkbox'/> 删除类别时同时删除该类别标注记录</label>
+    <button onclick='deleteCategory()' style='color:#ff8a80'>删除类别</button>
   </div>
   <textarea id='note' rows='2' style='width:100%;margin-bottom:8px' placeholder='备注'></textarea>
   <div id='videos' class='videos'></div>
@@ -277,11 +386,56 @@ video{width:100%;max-height:320px;background:#000}
   </div>
 </div></div>
 <script>
-let cur=null, curLabel="", eps=[], playing=false;
+let cur=null, curLabel="", eps=[], playing=false, categories=[], playbackRate=2.0;
 const jointsCache = {};
 const qualityCache = {};
 async function j(u,o){const r=await fetch(u,o);return await r.json();}
-async function loadMeta(){const d=await j('/api/meta');document.getElementById('meta').innerText=`episodes: ${d.episode_count}`;}
+function applyPlaybackRate(){
+  document.querySelectorAll('video').forEach(v=>{ v.playbackRate=playbackRate; });
+}
+function setPlaybackRate(v){
+  playbackRate=Number(v)||1.0;
+  const sel=document.getElementById('playback_rate');
+  if(sel){ sel.value=String(playbackRate); }
+  applyPlaybackRate();
+}
+function setHead(){ document.getElementById('head').innerText=cur?`${cur} 当前标注: ${curLabel||'(空)'}`:'未选择'; }
+function renderCategoryControls(){
+  const lf=document.getElementById('lf');
+  const prevLf=lf.value||'all';
+  lf.innerHTML='';
+  const filterOptions=[{value:'all',text:'全部'},{value:'unlabeled',text:'未标注'},...categories.map(c=>({value:c,text:c}))];
+  for(const o of filterOptions){ const op=document.createElement('option'); op.value=o.value; op.text=o.text; lf.appendChild(op); }
+  lf.value=filterOptions.some(o=>o.value===prevLf)?prevLf:'all';
+
+  const labelButtons=document.getElementById('label_buttons');
+  labelButtons.innerHTML='';
+  categories.forEach((c,idx)=>{
+    const b=document.createElement('button');
+    const hint=idx<9?`(键盘${idx+1})`:'';
+    b.innerText=`标${c}${hint}`;
+    b.onclick=()=>setL(c);
+    labelButtons.appendChild(b);
+  });
+
+  const curSelect=document.getElementById('cur_label_select');
+  curSelect.innerHTML='';
+  const emptyOpt=document.createElement('option');
+  emptyOpt.value=''; emptyOpt.text='(空)';
+  curSelect.appendChild(emptyOpt);
+  for(const c of categories){ const op=document.createElement('option'); op.value=c; op.text=c; curSelect.appendChild(op); }
+  curSelect.value=curLabel;
+
+  const deleteSelect=document.getElementById('delete_category_select');
+  deleteSelect.innerHTML='';
+  for(const c of categories){ const op=document.createElement('option'); op.value=c; op.text=c; deleteSelect.appendChild(op); }
+}
+async function loadMeta(){
+  const d=await j('/api/meta');
+  categories=d.categories||[];
+  document.getElementById('meta').innerText=`episodes: ${d.episode_count} | categories: ${categories.join(', ')}`;
+  renderCategoryControls();
+}
 function renderQuality(checks){
   const el=document.getElementById('quality');
   if(!checks||!checks.length){ el.innerText='无质量数据'; return; }
@@ -346,7 +500,8 @@ async function loadList(){
 }
 async function selectEp(ep){
   const d=await j(`/api/episode/${ep}`); if(!d.ok){alert(d.error); return;}
-  cur=ep; curLabel=d.label||""; document.getElementById('head').innerText=`${ep} 当前标注: ${curLabel||'(空)'}`;
+  cur=ep; curLabel=d.label||""; setHead();
+  document.getElementById('cur_label_select').value=curLabel;
   document.getElementById('save_status').innerText='';
   document.getElementById('quality').innerText='点击“运行当前 episode 质量检查”';
   document.getElementById('note').value=d.note||""; const v=document.getElementById('videos'); v.innerHTML='';
@@ -354,6 +509,7 @@ async function selectEp(ep){
     const auto = x.camera.includes('left_wrist_cam');
     c.innerHTML=`<div class='cam'>${x.camera}${auto?' (自动播放)':''}</div><video controls preload='${auto?'metadata':'none'}' ${auto?'autoplay':''} muted playsinline src='${x.url}'></video>`; v.appendChild(c);}
   playing=true;
+  applyPlaybackRate();
   const vs=document.querySelectorAll('video');
   for(const vv of vs){
     const isLeft = vv.src.includes('left_wrist_cam');
@@ -362,24 +518,74 @@ async function selectEp(ep){
   }
   loadAndRenderJoints(ep);
 }
+function setFromSelect(){ setL(document.getElementById('cur_label_select').value); }
 async function setL(l){
   curLabel=l;
-  if(cur) document.getElementById('head').innerText=`${cur} 当前标注: ${curLabel||'(空)'}`;
+  setHead();
+  document.getElementById('cur_label_select').value=curLabel;
   await save();
 }
 function togglePlay(){ const vs=document.querySelectorAll('video'); playing=!playing; vs.forEach(v=>playing?v.play():v.pause()); }
 async function save(){ if(!cur){alert('先选择episode');return;}
   const note=document.getElementById('note').value; const d=await j('/api/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({episode_id:cur,label:curLabel,note})});
   if(!d.ok){document.getElementById('save_status').style.color='#ff6b6b';document.getElementById('save_status').innerText='保存失败';alert(d.error||'保存失败');return;}
+  categories=d.categories||categories;
+  renderCategoryControls();
   document.getElementById('save_status').style.color='#8bc34a';
   document.getElementById('save_status').innerText=`已保存: ${cur} -> ${curLabel||'(空)'}`;
+  await loadList();
+}
+async function deleteCurrentLabel(){
+  if(!cur){ alert('先选择episode'); return; }
+  if(!confirm(`确认删除 ${cur} 的标注记录?`)){ return; }
+  const d=await j(`/api/label/${cur}`,{method:'DELETE'});
+  if(!d.ok){ alert(d.error||'删除失败'); return; }
+  curLabel='';
+  document.getElementById('note').value='';
+  setHead();
+  document.getElementById('cur_label_select').value='';
+  document.getElementById('save_status').style.color='#ffb74d';
+  document.getElementById('save_status').innerText=`已删除: ${cur} 标注记录`;
+  await loadList();
+}
+async function addCategory(){
+  const input=document.getElementById('new_category');
+  const name=(input.value||'').trim();
+  if(!name){ alert('类别名不能为空'); return; }
+  const d=await j(`/api/categories?name=${encodeURIComponent(name)}`,{method:'POST'});
+  if(!d.ok){ alert(d.error||'新增类别失败'); return; }
+  categories=d.categories||categories;
+  input.value='';
+  renderCategoryControls();
+  await loadMeta();
+  await loadList();
+}
+async function deleteCategory(){
+  const name=document.getElementById('delete_category_select').value;
+  if(!name){ alert('先选择类别'); return; }
+  const purge=document.getElementById('purge_rows').checked;
+  if(!confirm(`确认删除类别 ${name}?`)){ return; }
+  const d=await j(`/api/categories/${encodeURIComponent(name)}?purge_labeled_rows=${purge?'true':'false'}`,{method:'DELETE'});
+  if(!d.ok){ alert(d.error||'删除类别失败'); return; }
+  categories=d.categories||categories;
+  if(curLabel===name){ curLabel=''; setHead(); }
+  renderCategoryControls();
+  await loadMeta();
+  await loadList();
 }
 document.getElementById('refresh').onclick=loadList;
+document.getElementById('lf').onchange=loadList;
 document.getElementById('run_quality').onclick=()=>runQualityCheck(cur);
+document.getElementById('cur_label_select').onchange=()=>{ curLabel=document.getElementById('cur_label_select').value; setHead(); };
 document.addEventListener('keydown',e=>{ if(e.target&&['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
-  if(e.key==='1')setL('A'); if(e.key==='2')setL('B'); if(e.key==='3')setL('uncertain'); if(e.key==='0')setL('');
-  if(e.key===' ') {e.preventDefault(); togglePlay();} if(e.key==='Enter') save(); });
-loadMeta(); loadList();
+  if(e.key>='1'&&e.key<='9'){ const idx=Number(e.key)-1; if(idx<categories.length) setL(categories[idx]); }
+  if(e.key==='0')setL('');
+  if(e.key==='x' || e.key==='X'){ setPlaybackRate(playbackRate===2.0?1.0:2.0); }
+  if(e.key===' ') {e.preventDefault(); togglePlay();}
+  if(e.key==='Enter') save();
+});
+document.getElementById('playback_rate').value=String(playbackRate);
+loadMeta().then(loadList);
 </script></body></html>"""
 
 
