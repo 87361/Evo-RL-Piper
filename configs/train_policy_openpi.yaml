@@ -1,0 +1,9 @@
+backend: openpi
+openpi:
+  backend: openpi_torch
+  config_name: pi0_aloha_sim
+  openpi_root: third_party/openpi
+  extra_args:
+    - --exp-name=evorl_policy_openpi
+    - --overwrite
+

@@ -1,0 +1,21 @@
+backend: lerobot
+policy:
+  type: diffusion
+  device: cuda
+  push_to_hub: false
+dataset:
+  repo_id: pipeline_ab/A
+  root: /path/to/lerobot/dataset
+  revision: v3.0
+train:
+  steps: 30
+  batch_size: 8
+  num_workers: 2
+  eval_freq: 0
+  log_freq: 5
+  save_checkpoint: false
+  job_name: diffusion_smoke
+lerobot:
+  script_path: src/lerobot/scripts/lerobot_train.py
+  extra_args: []
+
