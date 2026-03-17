@@ -1,0 +1,3 @@
+[submodule "third_party/openpi"]
+	path = third_party/openpi
+	url = /data/vepfs/users/intern/lingyue.yang/openpi

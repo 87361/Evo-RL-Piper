@@ -166,6 +166,14 @@ wandb/
 # Data folders
 data/
 outputs/
+artifacts/
+assets/
+
+# Model weights
+*.pt
+*.pth
+*.ckpt
+*.safetensors
 
 # Translations
 *.mo

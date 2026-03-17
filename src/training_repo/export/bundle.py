@@ -29,7 +29,7 @@ def export_inference_bundle(config_path: Path) -> dict[str, Any]:
         raise FileNotFoundError(
             "Missing trained weights at "
             f"{model_path}. Check `artifact_weights_file` in export config "
-            "or run scripts/train_openpi.py first."
+            "or point to an existing legacy linear-policy artifact."
         )
     model = np.load(model_path)
     weight = model["weight"]

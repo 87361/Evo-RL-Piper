@@ -1,6 +1,6 @@
 ---
 name: training-repo-v0-min-loop
-overview: 定义与 TeleManipulation 解耦的训练仓库 v0 最小闭环：从原始数据整理到训练，再到可复制交付的推理包。仅覆盖 offline + OpenPI 后端 + APO最小思想。
+overview: 定义与 TeleManipulation 解耦的训练仓库 v0 最小闭环：从原始数据整理到训练，再到可复制交付的推理包。当前 PI 训练入口统一为 `scripts/train_pi.py` + `third_party/openpi`。
 todos:
   - id: v0-data-loop
     content: 实现 ingest/relabel/dataset_build 并产出最小训练数据包
@@ -27,7 +27,7 @@ TODO:实现 inference bundle 导出与可复制交付结构
 - `ingest`：接收采集侧导出的原始 episode（只做离线读取，不接真机）。
 - `relabel`：实现 APO 最小逻辑（3 类样本重标记 + K-step pre-intervention 回溯）。
 - `dataset_build`：导出训练后端可直接消费的数据包（index/labels + split + stats + manifest，不固化 batch 配比）。
-- `backend_openpi`：OpenPI 训练适配层（把内部 schema 映射到 OpenPI 输入契约）。
+- `third_party/openpi`：真实 PI 模型训练后端（官方训练入口）。
 - `train`：训练入口与实验产物落盘（ckpt、metrics、config 快照）。
 - `export`：导出推理代码包 + 配置 + 权重路径约定（给 TeleManipulation 直接拷贝）。
 
@@ -38,11 +38,11 @@ TODO:实现 inference bundle 导出与可复制交付结构
 - [src/training_repo/ingest/](src/training_repo/ingest/)：原始数据扫描与读取。
 - [src/training_repo/relabel/](src/training_repo/relabel/)：APO 最小重标记逻辑。
 - [src/training_repo/dataset_build/](src/training_repo/dataset_build/)：样本索引生成、bucket/label 写出、train/val 划分、归一化统计、产物导出。
-- [src/training_repo/backend_openpi/](src/training_repo/backend_openpi/)：OpenPI dataset adapter + launcher。
+- [third_party/openpi/](third_party/openpi/)：OpenPI 官方训练仓（子模块）。
 - [src/training_repo/train/](src/training_repo/train/)：训练 orchestrator。
 - [src/training_repo/export/](src/training_repo/export/)：推理包生成器。
 - [deploy/inference_bundle/](deploy/inference_bundle/)：最终给 TeleManipulation 拷贝的目录模板。
-- [scripts/](scripts/)：`build_dataset.py` / `train_openpi.py` / `export_inference_bundle.py`。
+- [scripts/](scripts/)：`build_dataset.py` / `train_pi.py` / `export_inference_bundle.py`。
 - [tests/](tests/)：仅保留最小单测与端到端冒烟测试。
 
 ## C. 当前必须的最小 schema
@@ -97,7 +97,7 @@ TODO:实现 inference bundle 导出与可复制交付结构
   - [uv.lock](uv.lock)（锁版本，确保可复现）。
   - [.python-version](.python-version)（固定 Python 大版本）。
 - 配置与约定：
-  - [configs/train_openpi.yaml](configs/train_openpi.yaml)
+  - [configs/train_pi0_openpi.yaml](configs/train_pi0_openpi.yaml)
   - [configs/dataset_build.yaml](configs/dataset_build.yaml)
   - [configs/export_inference.yaml](configs/export_inference.yaml)
   - [docs/weight_path_contract.md](docs/weight_path_contract.md)（TOS 挂载路径规范）。
@@ -119,7 +119,7 @@ TODO:实现 inference bundle 导出与可复制交付结构
 ## I. 推荐开发顺序（1/2/3/4）
 
 1. **数据链路先通**：完成 `ingest + relabel + dataset_build`，产出可复现数据包（含 split/index/labels/stats，不含比例采样固化）。
-2. **训练先跑通**：实现 `backend_openpi + train`，在一个小数据集上完成首个可收敛训练。
+2. **训练先跑通**：通过 `scripts/train_pi.py` 调用 `third_party/openpi`，在小数据集完成首个可收敛训练。
 3. **导出与推理对齐**：实现 `export`，产出 `inference_bundle` 并本地跑通离线推理 smoke test。
 4. **交付验证**：按 `README_deploy.md` 在“模拟 TeleManipulation 目录”中拷贝运行，验证权重路径约定与接口稳定。
 
@@ -130,26 +130,20 @@ TODO:实现 inference bundle 导出与可复制交付结构
   - episode 级 split
   - 全局唯一 `sample_id = <episode_id>:<t>`
   - OpenPI 最小可读契约字段（`sample_id/obs_state/action/sample_type/label_source`）
-- **OpenPI 最小训练 smoke 闭环**已补齐并通过：
-  - 复用 `OpenPIDatasetAdapter`、`ProportionalBucketSampler`、`OpenPIBackend`
-  - 新增 `src/training_repo/backend_openpi/dataloader.py`，仅做数组准备函数收口（无新抽象层）
-  - `backend.py` 改为复用该函数，保留现有 sampler 与训练循环
-  - 新增 `tests/training_repo/test_train_openpi_smoke.py`
-  - 验证链路：`dataset package -> adapter -> sampler -> 1 epoch/1 step training -> artifact 落盘`
-  - 验证产物：`model.npz`、`metrics.json`、`train_config_snapshot.json`
-  - 验证约束：训练过程不回写 dataset build 产物（文件哈希前后一致）
+- **OpenPI 训练入口已统一**：
+  - 已移除 `training_repo` 线性 OpenPI 后端
+  - 使用 `scripts/train_pi.py` 转发至 `third_party/openpi/scripts/train.py|train_pytorch.py`
+  - 训练产物以 `third_party/openpi/checkpoints/...` 为准
 - **采样职责边界保持不变**：
   - APO 比例采样仅在训练侧 sampler 生效
   - 不回写到 dataset build
 - **本轮未扩展范围**：
-  - 未新增 `scripts/smoke_train_openpi.py`
   - 未扩展 resume、多卡、RLinf、真机、完整 DataLoader 分层
 
 复验命令（repo-relative）：
 
 - `PYTHONPATH=src python -m pytest -q --confcutdir=tests/training_repo tests/training_repo/test_dataset_build_min_loop.py`
-- `PYTHONPATH=src python -m pytest -q --confcutdir=tests/training_repo tests/training_repo/test_train_openpi_smoke.py`
-- `PYTHONPATH=src python -m pytest -q --confcutdir=tests/training_repo tests/training_repo/test_dataset_build_min_loop.py tests/training_repo/test_train_openpi_smoke.py`
+- `python scripts/train_pi.py --config configs/train_pi0_openpi.yaml --exp-name=smoke --overwrite`
 
 ## K. 260316 数据标注与任务拆分补充
 
@@ -158,8 +152,12 @@ TODO:实现 inference bundle 导出与可复制交付结构
 - 脚本：`scripts/review_episode_tasks_gui.py`
 - 最小目标：
   - 批量审阅 episode 的多相机视频
-  - 标注 `A/B/uncertain`
+  - 多类别标注（不再限制 `A/B/uncertain`）
   - 立即写入 CSV，避免断连丢标注
+- 当前能力补充（260316）：
+  - 支持新增/删除类别
+  - 支持删除当前 episode 标注记录（从 CSV 删除该行）
+  - 支持视频倍速 `1.0x / 1.5x / 2.0x`（默认 `2.0x`，快捷键 `X` 可在 `1.0x/2.0x` 间切换）
 - 运行示例：
 
 ```bash
@@ -192,6 +190,70 @@ PYTHONPATH=src python scripts/apply_labels_and_build.py \
 
 ### 3) 训练侧语义说明
 
-- v0 的 `OpenPIBackend` 当前不消费额外任务标签字段。
+- 当前仓库已移除 `OpenPIBackend` 线性后端。
 - 因此 A/B 最稳妥方式是分目录分别训练，而非单目录混合后仅在 JSON 打标签。
+- 结论：标注 GUI 已升级为多类别，但当前构建脚本 `scripts/apply_labels_and_build.py` 仍是 A/B 定向构建逻辑。
 
+## L. 260316 训练落地 SOP 与实现更新
+
+### 1) SOP 关键约束
+
+- 训练样本必须三相机齐全（`head/left_wrist/right_wrist`）。
+- 仅使用 CSV 标注 `A/B`；`uncertain` 全部丢弃。
+- 已确认 11 条头相机-only 样本（`episode_000153`~`episode_000163`）直接不纳入训练集。
+
+### 2) A 批闭环（实测）
+
+- 数据准备：
+  - 对齐三相机后导出 raw json
+  - 执行 `apply_labels_and_build.py --drop-non-ab`
+  - 得到 A/B：A=76 episodes，B=75 episodes，uncertain=2 dropped
+- OpenPI smoke（A）：
+  - 配置：`configs/train_pi0_openpi.yaml`
+  - 指标：以 `third_party/openpi` 训练日志为准
+- ACT smoke（A）：
+  - 先转 LeRobot v3：`scripts/convert_training_repo_to_lerobot.py`
+  - 训练 loss：`55.847 -> 21.768 -> 14.993 -> 10.462 -> 8.636 -> 7.297`
+
+### 3) 本轮代码改动
+
+- 新增：`scripts/convert_training_repo_to_lerobot.py`
+- 新增：`configs/train_pi0_openpi.yaml`
+- 修改：`src/lerobot/datasets/utils.py`
+  - `load_nested_dataset` 在 cast 前先按 schema 重排列顺序，提高数据加载鲁棒性。
+
+## M. 远端数据集增量同步 SOP（TOS）
+
+### 1) 远端目录确认
+
+```bash
+tosutil ls "tos://drobotics-ailab/users/lingyue.yang/dataset/WBCD/" | rg '/$'
+```
+
+- 建议按“批次子目录”同步（例如 `alicia_dual_piper_0316_batch1/`），避免从最外层 `WBCD/` 直接拷贝导致本地目录多嵌套一层。
+
+### 2) 本地落盘根目录
+
+```bash
+ls -la "/data/vepfs/users/intern/lingyue.yang/datasets/WBCD/WBCD"
+```
+
+### 3) 增量同步命令（推荐）
+
+```bash
+tosutil cp -r -j=50 -u \
+  "tos://drobotics-ailab/users/lingyue.yang/dataset/WBCD/alicia_dual_piper_0316_batch1/" \
+  "/data/vepfs/users/intern/lingyue.yang/datasets/WBCD/WBCD/"
+```
+
+- 参数：`-r` 递归，`-j=50` 并发，`-u` 增量更新（仅新增/变化对象）。
+
+### 4) 同步后核对
+
+```bash
+tosutil ls "tos://drobotics-ailab/users/lingyue.yang/dataset/WBCD/alicia_dual_piper_0316_batch1/"
+```
+
+- 关注：
+  - `Failed count is: 0`
+  - 重跑增量时出现 `Skip count`（表示一致性已达成）

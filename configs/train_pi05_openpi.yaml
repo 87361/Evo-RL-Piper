@@ -1,0 +1,6 @@
+backend: openpi_torch
+config_name: pi05_aloha
+openpi_root: third_party/openpi
+extra_args:
+  - --exp-name=evorl_pi05_local
+  - --overwrite

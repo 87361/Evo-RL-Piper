@@ -47,8 +47,29 @@
    - `python scripts/build_dataset.py --config configs/dataset_build.yaml`
 2. 运行最小 E2E 测试：
    - `pytest -q tests/training_repo/test_dataset_build_min_loop.py`
-3. 运行 OpenPI 可读 smoke：
-   - `python scripts/smoke_dataset_openpi.py --dataset-root data/processed/openpi_v0`
+3. 运行 PI 训练入口 smoke：
+   - `python scripts/train_pi.py --config configs/train_pi0_openpi.yaml --exp-name=dataset_smoke --overwrite`
+
+## WBCD pi05 LoRA 训练补充（不含 HDF5->LeRobot）
+
+说明：
+
+- 本节仅记录 `norm stats` 与训练配置/启动方式。
+- 如果数据已经是可直接读取的 LeRobot 数据集，可跳过 HDF5 转换步骤。
+
+1. 计算归一化统计（必做）：
+   - `CUDA_VISIBLE_DEVICES=5,7 uv run scripts/compute_norm_stats.py --config-name pi05_aloha_wbcd_main_100`
+2. 训练配置关键点（`pi05_aloha_wbcd_main_100`）：
+   - `model`: `Pi0Config(pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora")`
+   - `data.repo_id`: `packing-wbcd_main-train-100`
+   - `data.adapt_to_pi`: `false`
+   - `data.repack_transforms`: 对齐三路图像键（`cam_high` / `cam_left_wrist` / `cam_right_wrist`）与 `state/action/prompt`
+   - `base_config.prompt_from_task`: `true`
+   - `weight_loader`: `gs://openpi-assets/checkpoints/pi05_base/params`
+   - `freeze_filter`: 使用同构 LoRA `Pi0Config(...).get_freeze_filter()`
+   - `num_train_steps=20000`, `batch_size=16`, `fsdp_devices=2`, `ema_decay=None`
+3. 启动训练（JAX，FSDP 双卡）：
+   - `CUDA_VISIBLE_DEVICES=5,7 uv run scripts/train.py --config-name pi05_aloha_wbcd_main_100`
 
 ## Smoke 通过标准
 
@@ -59,8 +80,8 @@
   - `meta/normalization_stats.json`
   - `meta/dataset_meta.json`
 - E2E 测试通过：
-  - 覆盖 ingest -> relabel -> split/index -> stats -> adapter read
-- smoke 脚本通过：
-  - 契约字段完整
-  - `sample_id` 跨文件一致
-  - `OpenPIDatasetAdapter.load_split("train")` 成功返回
+  - 覆盖 ingest -> relabel -> split/index -> stats 一致性
+- 训练入口 smoke 可启动：
+  - 由 `scripts/train_pi.py` 转发到 `third_party/openpi` 官方训练脚本
+- pi05 LoRA 训练可进入循环：
+  - 日志出现 `world_size=2`、`step=...`、`loss=...`

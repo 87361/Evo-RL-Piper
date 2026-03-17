@@ -132,6 +132,9 @@ def load_nested_dataset(
         table = arrow_dataset.to_table(filter=filter_expr)
 
         if features is not None:
+            target_names = list(features.arrow_schema.names)
+            if table.schema.names != target_names:
+                table = table.select(target_names)
             table = table.cast(features.arrow_schema)
 
         return Dataset(table)

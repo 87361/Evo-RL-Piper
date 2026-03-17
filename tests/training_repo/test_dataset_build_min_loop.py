@@ -3,7 +3,6 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from training_repo.backend_openpi.dataset_adapter import OpenPIDatasetAdapter
 from training_repo.common.io import read_json, read_jsonl, write_yaml
 from training_repo.dataset_build.builder import build_dataset
 
@@ -74,7 +73,7 @@ def test_sample_id_unique_globally_and_cross_file_sets_match(tmp_path: Path) -> 
     assert set(build_ids) == set(label_ids) == set(step_ids)
 
 
-def test_openpi_min_contract_and_adapter_readable(tmp_path: Path) -> None:
+def test_openpi_min_contract_readable_by_manifest_and_labels(tmp_path: Path) -> None:
     dataset_root = _build_fixture_dataset(tmp_path)
     build_rows = read_jsonl(dataset_root / "manifests" / "build_manifest.jsonl")
     label_rows = read_jsonl(dataset_root / "labels" / "sample_labels.jsonl")
@@ -94,27 +93,10 @@ def test_openpi_min_contract_and_adapter_readable(tmp_path: Path) -> None:
         assert row["split"] in {"train", "val"}
         assert row["bucket"] in {"correct", "interaction", "incorrect"}
 
-    adapter = OpenPIDatasetAdapter(dataset_root)
-    train_samples = adapter.load_split("train")
-    val_samples = adapter.load_split("val")
-
-    assert train_samples
-    assert val_samples
-    sample = train_samples[0]
-    required_adapter_keys = {
-        "sample_id",
-        "episode_id",
-        "t",
-        "bucket",
-        "obs_image_refs",
-        "obs_state",
-        "action",
-        "intervention_flag",
-        "terminal",
-        "sample_type",
-        "label_source",
-    }
-    assert required_adapter_keys.issubset(sample.keys())
+    train_rows = [row for row in build_rows if row["split"] == "train"]
+    val_rows = [row for row in build_rows if row["split"] == "val"]
+    assert train_rows
+    assert val_rows
 
 
 def test_stats_shape_matches_step_vectors(tmp_path: Path) -> None:
