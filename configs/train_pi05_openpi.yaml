@@ -1,6 +1,8 @@
-backend: openpi_torch
-config_name: pi05_aloha
+backend: openpi_jax
+config_name: pi05_aloha_wbcd_lora
 openpi_root: third_party/openpi
 extra_args:
-  - --exp-name=evorl_pi05_local
+  - --project-name=EvoRL-Piper
+  - --exp-name=evorl_pi05_lora_fullA_260317
+  - --wandb-enabled
   - --overwrite

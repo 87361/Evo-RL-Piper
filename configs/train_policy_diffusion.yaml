@@ -1,6 +1,7 @@
 backend: lerobot
+policy_config: policy/diffusion.yaml
 policy:
-  type: diffusion
+  # Inline fields override policy_config values.
   device: cuda
   push_to_hub: false
 dataset:

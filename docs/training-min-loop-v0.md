@@ -205,19 +205,19 @@ PYTHONPATH=src python scripts/apply_labels_and_build.py \
 ### 2) A 批闭环（实测）
 
 - 数据准备：
-  - 对齐三相机后导出 raw json
-  - 执行 `apply_labels_and_build.py --drop-non-ab`
-  - 得到 A/B：A=76 episodes，B=75 episodes，uncertain=2 dropped
+  - 原始 LeRobot v2.1 数据按 CSV 执行 `scripts/split_lerobot_v21_by_labels.py --drop-non-ab --require-all-videos`
+  - 保留三路视频并重排子集 episode 索引
+  - 得到 A/B：A=76 episodes，B=74 episodes，uncertain=2 dropped
 - OpenPI smoke（A）：
   - 配置：`configs/train_pi0_openpi.yaml`
   - 指标：以 `third_party/openpi` 训练日志为准
 - ACT smoke（A）：
-  - 先转 LeRobot v3：`scripts/convert_training_repo_to_lerobot.py`
+  - 直接使用切分后的 LeRobot v2.1 A 子集（无需转 v3）
   - 训练 loss：`55.847 -> 21.768 -> 14.993 -> 10.462 -> 8.636 -> 7.297`
 
 ### 3) 本轮代码改动
 
-- 新增：`scripts/convert_training_repo_to_lerobot.py`
+- 新增：`scripts/split_lerobot_v21_by_labels.py`
 - 新增：`configs/train_pi0_openpi.yaml`
 - 修改：`src/lerobot/datasets/utils.py`
   - `load_nested_dataset` 在 cast 前先按 schema 重排列顺序，提高数据加载鲁棒性。

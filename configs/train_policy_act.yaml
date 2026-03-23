@@ -1,6 +1,7 @@
 backend: lerobot
+policy_config: policy/act.yaml
 policy:
-  type: act
+  # Inline fields override policy_config values.
   device: cuda
   push_to_hub: false
 dataset:
@@ -8,11 +9,15 @@ dataset:
   root: /path/to/lerobot/dataset
   revision: v3.0
 train:
-  steps: 30
-  batch_size: 8
-  num_workers: 2
+  # Aligned with kuavo_data_challenge default:
+  # max_epoch=20 and max_training_step=null, where
+  # num_steps = 20 * ((total_frames // batch_size) + 1).
+  # For current A dataset (total_frames=13949, batch_size=32): steps=8720.
+  steps: 8720
+  batch_size: 32
+  num_workers: 8
   eval_freq: 0
-  log_freq: 5
+  log_freq: 1
   save_checkpoint: false
   job_name: act_smoke
 lerobot:

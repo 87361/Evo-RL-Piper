@@ -100,3 +100,51 @@ def test_run_training_dispatches_lerobot_command(tmp_path: Path, monkeypatch) ->
     assert "--steps=10" in argv
     assert result.artifact_dir.name == "train"
 
+
+def test_run_training_merges_external_policy_config(tmp_path: Path, monkeypatch) -> None:
+    script_path = tmp_path / "src" / "lerobot" / "scripts" / "lerobot_train.py"
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    script_path.write_text("#!/usr/bin/env python\n", encoding="utf-8")
+
+    policy_config_path = tmp_path / "configs" / "policy" / "act.yaml"
+    policy_config_path.parent.mkdir(parents=True, exist_ok=True)
+    write_yaml(
+        policy_config_path,
+        {
+            "type": "act",
+            "device": "cpu",
+            "chunk_size": 50,
+            "optimizer_lr": 1e-5,
+        },
+    )
+
+    config_path = tmp_path / "configs" / "train_policy_act.yaml"
+    write_yaml(
+        config_path,
+        {
+            "backend": "lerobot",
+            "policy_config": "policy/act.yaml",
+            "policy": {"device": "cuda"},
+            "dataset": {"repo_id": "pipeline_ab/A", "root": "/tmp/dataset"},
+            "train": {"steps": 5},
+            "lerobot": {"script_path": "../src/lerobot/scripts/lerobot_train.py", "extra_args": []},
+        },
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_run(command, check, cwd):  # noqa: ANN001
+        captured["command"] = command
+        captured["check"] = check
+        captured["cwd"] = cwd
+        return None
+
+    monkeypatch.setattr("training_repo.backends.lerobot_backend.subprocess.run", _fake_run)
+    run_training(config_path)
+
+    argv = captured["command"]
+    assert "--policy.type=act" in argv
+    assert "--policy.chunk_size=50" in argv
+    assert "--policy.optimizer_lr=1e-05" in argv
+    assert "--policy.device=cuda" in argv
+

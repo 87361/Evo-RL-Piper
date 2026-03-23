@@ -50,26 +50,31 @@
 3. 运行 PI 训练入口 smoke：
    - `python scripts/train_pi.py --config configs/train_pi0_openpi.yaml --exp-name=dataset_smoke --overwrite`
 
-## WBCD pi05 LoRA 训练补充（不含 HDF5->LeRobot）
+## WBCD pi05 LoRA 训练
 
 说明：
 
 - 本节仅记录 `norm stats` 与训练配置/启动方式。
-- 如果数据已经是可直接读取的 LeRobot 数据集，可跳过 HDF5 转换步骤。
+- 当前推荐输入是 **LeRobot v2.1** 数据集（保留视频），不走 v3 转换。
+
+0. 先按 CSV 切分 v2.1 的 A/B（保留三路视频）：
+   - `PYTHONPATH=src python scripts/split_lerobot_v21_by_labels.py --src-root <v2.1源数据根目录> --label-csv <task_labels.csv> --output-root <tmp/pipeline_ab/lerobot_v21_split> --task-a-name shirt_open_middle --task-b-name shirt_flatten --drop-non-ab --require-all-videos --overwrite`
+   - 目标：`<output-root>/A` 和 `<output-root>/B` 都是 LeRobot `v2.1`，且 `video_path` 非空。
 
 1. 计算归一化统计（必做）：
-   - `CUDA_VISIBLE_DEVICES=5,7 uv run scripts/compute_norm_stats.py --config-name pi05_aloha_wbcd_main_100`
-2. 训练配置关键点（`pi05_aloha_wbcd_main_100`）：
+   - `CUDA_VISIBLE_DEVICES=2,3 uv run scripts/compute_norm_stats.py --config-name pi05_aloha_wbcd_lora`
+2. 训练配置关键点（`pi05_aloha_wbcd_lora`，与旧名称等价，字段为准）：
    - `model`: `Pi0Config(pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora")`
-   - `data.repo_id`: `packing-wbcd_main-train-100`
+   - `data.repo_id`: `pipeline_ab/A`
    - `data.adapt_to_pi`: `false`
-   - `data.repack_transforms`: 对齐三路图像键（`cam_high` / `cam_left_wrist` / `cam_right_wrist`）与 `state/action/prompt`
+   - 本地数据目录映射到：`HF_LEROBOT_HOME/pipeline_ab/A`（建议链接到 `tmp/pipeline_ab/lerobot_v21_split/A`）
+   - `data.repack_transforms`: 图像键需与数据集字段一致（WBCD 原始键为 `head_cam/left_wrist_cam/right_wrist_cam`）
    - `base_config.prompt_from_task`: `true`
    - `weight_loader`: `gs://openpi-assets/checkpoints/pi05_base/params`
    - `freeze_filter`: 使用同构 LoRA `Pi0Config(...).get_freeze_filter()`
    - `num_train_steps=20000`, `batch_size=16`, `fsdp_devices=2`, `ema_decay=None`
 3. 启动训练（JAX，FSDP 双卡）：
-   - `CUDA_VISIBLE_DEVICES=5,7 uv run scripts/train.py --config-name pi05_aloha_wbcd_main_100`
+   - `CUDA_VISIBLE_DEVICES=5,7 uv run scripts/train.py --config-name pi05_aloha_wbcd_lora`
 
 ## Smoke 通过标准
 

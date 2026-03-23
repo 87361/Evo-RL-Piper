@@ -1,0 +1,23 @@
+type: act
+device: cuda
+push_to_hub: false
+
+# Core ACT hyperparameters (can be overridden in train_policy_act.yaml)
+n_obs_steps: 1
+chunk_size: 100
+n_action_steps: 1
+vision_backbone: resnet18
+dim_model: 512
+n_heads: 8
+dim_feedforward: 3200
+n_encoder_layers: 4
+n_decoder_layers: 7
+use_vae: true
+latent_dim: 32
+n_vae_encoder_layers: 4
+dropout: 0.1
+kl_weight: 10.0
+temporal_ensemble_coeff: -0.1
+optimizer_lr: 1e-5
+optimizer_weight_decay: 1e-4
+optimizer_lr_backbone: 1e-5
