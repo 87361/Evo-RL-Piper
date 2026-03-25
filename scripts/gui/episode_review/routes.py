@@ -194,20 +194,18 @@ def app_factory(
                 "camera_count": len(cams),
                 "label": label,
                 "note": labels.get(ep, {}).get("note", ""),
-                "thumb_url": f"/media/{thumb}" if thumb else "",
+                "thumb_url": f"media/{thumb}" if thumb else "",
                 "thumb_cam": thumb_cam,
             })
         total = len(items)
-        start = (page - 1) * per_page
-        end = start + per_page
-        return {"items": items[start:end], "total": total, "page": page, "per_page": per_page}
+        return {"items": items, "total": total, "page": page, "per_page": per_page}
 
     @app.get("/api/episode/{episode_id}")
     def get_episode(episode_id: str) -> dict:
         if episode_id not in episodes:
             return {"ok": False, "error": "episode not found"}
         videos = [
-            {"camera": cam, "url": f"/media/{rel}", "rel_path": rel}
+            {"camera": cam, "url": f"media/{rel}", "rel_path": rel}
             for cam, rel in sorted(episodes[episode_id].items())
         ]
         row = labels.get(episode_id, {})
@@ -468,7 +466,7 @@ def app_factory(
             split_job["result"] = None
             split_job["error"] = None
 
-        project_root = Path(__file__).parent.parent.resolve()
+        project_root = Path(__file__).resolve().parents[3]  # scripts/gui/episode_review/routes.py -> Evo-RL-Piper/
 
         if payload.mode == "merge":
             source_args = []

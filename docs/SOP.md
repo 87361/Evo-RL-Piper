@@ -1,12 +1,20 @@
 # SOP: 从数据后处理、数据集分割、启动不同策略的训练到开环测试、真机部署打包
 
-## 数据集后处理命令
+## 数据集处理图形化页面命令
 
-（待补充）
+PYTHONPATH=src python scripts/gui/episode_review/main.py --host 127.0.0.1 --port 18080
 
-## 数据集分割命令
+## 数据集管理与拉取（TOS）
 
-（待补充）
+从 TOS 拉取最新采集的数据集（以 `alicia_dual_piper_0316_batch1` 为例），请使用 `tosutil`，以增量下载模式拉取。
+**注意目录的嵌套结构**：GUI 要求数据集存放在类似于 `.../WBCD/WBCD/<数据集目录>/<内部同名目录>/` 的双层嵌套结构下（即 `alicia_dual_piper_0316_batch1/alicia_dual_piper_0316_batch1/videos/`），因此拉取时的目标路径直接指定为第一层即可：
+
+```bash
+# 鉴于数据集较大，建议使用 tmux 后台防止断开
+tmux new-session -s download_wbcd -d 'tosutil cp -r tos://drobotics-ailab/users/lingyue.yang/dataset/WBCD/alicia_dual_piper_0316_batch1/ /data/vepfs/users/intern/lingyue.yang/datasets/WBCD/WBCD/alicia_dual_piper_0316_batch1/ -u'
+
+# 附加: 如果想查看下载进度，可以执行 `tmux attach -t download_wbcd`
+```
 
 ## 启动 pi 系列策略
 

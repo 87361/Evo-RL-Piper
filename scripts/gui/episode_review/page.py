@@ -298,7 +298,7 @@ function toggleAllPlay(){
 
 /* --- Meta & categories --- */
 async function loadMeta(){
-  const d=await j('/api/meta');
+  const d=await j('api/meta');
   categories=d.categories||[];
   document.getElementById('meta_info').innerText=`${d.episode_count}条 | ${categories.join(', ')}`;
   renderTopbarCategories();
@@ -318,7 +318,7 @@ function renderTopbarCategories(){
 async function loadGrid(){
   const q=encodeURIComponent(document.getElementById('q').value.trim());
   const lf=encodeURIComponent(document.getElementById('lf').value);
-  const d=await j(`/api/list?q=${q}&lf=${lf}`);
+  const d=await j(`api/list?q=${q}&lf=${lf}`);
   allEps=d.items; filteredEps=allEps;
   for(const e of allEps) labelCache[e.episode_id]=e.label||'';
   page=0; renderPage();
@@ -367,7 +367,7 @@ function renderPage(){
 }
 
 async function quickLabel(epId,label){
-  const d=await j('/api/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({episode_id:epId,label:label,note:''})});
+  const d=await j('api/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({episode_id:epId,label:label,note:''})});
   if(!d.ok){showStatus('保存失败',false);return;}
   labelCache[epId]=label;
   if(d.categories) categories=d.categories;
@@ -393,7 +393,7 @@ function openModal(epId){
   loadAndRenderJoints(epId);
 }
 async function loadModalVideos(epId){
-  const d=await j(`/api/episode/${epId}`);
+  const d=await j(`api/episode/${epId}`);
   if(!d.ok){alert(d.error);return;}
   document.getElementById('modal_note').value=d.note||'';
   const box=document.getElementById('modal_videos');box.innerHTML='';
@@ -407,14 +407,14 @@ async function loadModalVideos(epId){
 function closeModal(){document.getElementById('detail_modal').classList.remove('show');document.getElementById('modal_videos').innerHTML='';modalEp=null;}
 async function saveModalNote(){
   if(!modalEp)return;
-  const d=await j('/api/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({episode_id:modalEp,label:labelCache[modalEp]||'',note:document.getElementById('modal_note').value})});
+  const d=await j('api/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({episode_id:modalEp,label:labelCache[modalEp]||'',note:document.getElementById('modal_note').value})});
   if(d.ok) showStatus(`备注已保存: ${modalEp}`); else showStatus('失败',false);
 }
 async function runQualityCheck(){
   if(!modalEp)return;
   if(qualityCache[modalEp]){renderQuality(qualityCache[modalEp]);return;}
   document.getElementById('modal_quality').innerText='检查中...';
-  const d=await j(`/api/episode/${modalEp}/quality`);
+  const d=await j(`api/episode/${modalEp}/quality`);
   if(!d.ok){document.getElementById('modal_quality').innerText=d.error||'失败';return;}
   qualityCache[modalEp]=d.checks;
   document.getElementById('modal_quality').innerHTML=d.checks.map(c=>{
@@ -455,7 +455,7 @@ function renderJointChart(payload){
 }
 async function loadAndRenderJoints(ep){
   if(jointsCache[ep]){renderJointChart(jointsCache[ep]);return;}
-  const jd=await j(`/api/episode/${ep}/joints`);
+  const jd=await j(`api/episode/${ep}/joints`);
   jointsCache[ep]=jd;
   renderJointChart(jd);
 }
@@ -465,7 +465,7 @@ async function addCategory(){
   const input=document.getElementById('new_category');
   const name=(input.value||'').trim();
   if(!name){alert('空');return;}
-  const d=await j(`/api/categories?name=${encodeURIComponent(name)}`,{method:'POST'});
+  const d=await j(`api/categories?name=${encodeURIComponent(name)}`,{method:'POST'});
   if(!d.ok){alert(d.error||'失败');return;}
   categories=d.categories||categories; input.value='';
   renderTopbarCategories(); renderPage(); await loadMeta();
@@ -474,7 +474,7 @@ async function deleteCategory(){
   const name=document.getElementById('delete_category_select').value;
   if(!name){alert('先选类别');return;}
   if(!confirm(`删除 "${name}"?`))return;
-  const d=await j(`/api/categories/${encodeURIComponent(name)}?purge_labeled_rows=${document.getElementById('purge_rows').checked}`,{method:'DELETE'});
+  const d=await j(`api/categories/${encodeURIComponent(name)}?purge_labeled_rows=${document.getElementById('purge_rows').checked}`,{method:'DELETE'});
   if(!d.ok){alert(d.error||'失败');return;}
   categories=d.categories||categories;
   renderTopbarCategories(); await loadGrid();
@@ -494,7 +494,7 @@ async function renameCategory(){
   const statusEl=document.getElementById('rename_status');
   statusEl.innerText='改名中...'; statusEl.style.color='#ffb74d';
 
-  const d=await j('/api/rename-category',{method:'POST',headers:{'Content-Type':'application/json'},
+  const d=await j('api/rename-category',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({old_name:oldName,new_name:newName,apply_to_all_sources:applyAll})});
   if(!d.ok){statusEl.innerText='失败: '+(d.error||'');statusEl.style.color='#ff6b6b';return;}
 
@@ -514,7 +514,7 @@ async function renameCategory(){
 
 /* ==== Dataset Info Tab ==== */
 async function loadDatasetInfo(){
-  const d=await j('/api/dataset-info'); dsInfo=d;
+  const d=await j('api/dataset-info'); dsInfo=d;
   const grid=document.getElementById('ds_info_grid'); grid.innerHTML='';
   [{t:'格式',v:d.codebase_version},{t:'路径',v:d.dataset_root},{t:'Episodes(meta)',v:d.total_episodes},
    {t:'有视频',v:d.total_episodes_with_video},{t:'帧数',v:d.total_frames},{t:'FPS',v:d.fps},
@@ -535,7 +535,7 @@ async function loadDatasetInfo(){
 
 /* ==== Merge sources ==== */
 async function loadMergeSources(){
-  const d=await j('/api/merge-sources');
+  const d=await j('api/merge-sources');
   if(!d.ok)return;
   mergeSourcesData=d;
   const body=document.getElementById('source_body');body.innerHTML='';
@@ -666,7 +666,7 @@ function toggleAddPanel(){
 async function scanDatasets(){
   const list=document.getElementById('add_ds_list');
   list.innerHTML='<div class="small" style="padding:8px">扫描中...</div>';
-  const d=await j('/api/scan-datasets');
+  const d=await j('api/scan-datasets');
   if(!d.ok){list.innerHTML=`<div class="small" style="padding:8px;color:#ff6b6b">${d.error||'扫描失败'}</div>`;return;}
   if(!d.datasets.length){list.innerHTML='<div class="small" style="padding:8px">未发现新的数据集</div>';return;}
   list.innerHTML='';
@@ -682,7 +682,7 @@ async function scanDatasets(){
 }
 
 async function addSource(root,name,labelCsv){
-  const d=await j('/api/merge-sources/add',{method:'POST',headers:{'Content-Type':'application/json'},
+  const d=await j('api/merge-sources/add',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({dataset_root:root,name:name,label_csv:labelCsv})});
   if(!d.ok){alert(d.error||'添加失败');return;}
   showStatus(`已添加: ${d.name}`);
@@ -692,7 +692,7 @@ async function addSource(root,name,labelCsv){
 
 async function removeSource(name){
   if(!confirm(`移除数据源 "${name}"？`))return;
-  const d=await j(`/api/merge-sources/${encodeURIComponent(name)}`,{method:'DELETE'});
+  const d=await j(`api/merge-sources/${encodeURIComponent(name)}`,{method:'DELETE'});
   if(!d.ok){alert(d.error||'移除失败');return;}
   showStatus(`已移除: ${name}`);
   await loadMergeSources();
@@ -724,7 +724,7 @@ async function runJob(){
   statusEl.innerText=actionName+'中...'; statusEl.style.color='#ffb74d';
   outputEl.style.display='block'; outputEl.innerText='正在启动...';
 
-  const d=await j('/api/split',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  const d=await j('api/split',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     mode:splitMode, output_root:outputRoot, task_map:taskMap, labels:targetLabels,
     require_all_videos:document.getElementById('split_require_videos').checked,
     overwrite:document.getElementById('split_overwrite').checked,
@@ -734,7 +734,7 @@ async function runJob(){
   outputEl.innerText='命令: '+d.command+'\n\n等待结果...';
 
   const poll=setInterval(async()=>{
-    const s=await j('/api/split/status');
+    const s=await j('api/split/status');
     if(s.running){statusEl.innerText=actionName+'进行中...';}
     else{
       clearInterval(poll);
