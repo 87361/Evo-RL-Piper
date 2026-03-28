@@ -1,0 +1,8 @@
+description: "Sample Image Classification Template"
+command: "echo 'Starting training for {{dataset_id}}...' && sleep 2 && echo 'Epoch 1/{{epochs}}' && sleep 2 && echo 'Train Loss: {{learning_rate}}' && sleep 2 && echo 'Epoch 2/{{epochs}}' && sleep 2 && echo 'Done! Output in {{output_dir}}'"
+params:
+  dataset_id: "imagenet_mini"
+  epochs: 10
+  batch_size: 32
+  learning_rate: 0.001
+  output_dir: "/tmp/results"

@@ -1,0 +1,8 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+psutil==7.0.0
+pyjwt==2.10.1
+python-multipart==0.0.20
+pyyaml==6.0.2
+pyarrow
+opencv-python-headless

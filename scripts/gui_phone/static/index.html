@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WBCD Console</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Login -->
+    <div id="login-view" class="view">
+        <div class="login-container">
+            <div class="logo-area">
+                <div class="logo">WBCD</div>
+                <div class="subtitle">Cloud Console</div>
+            </div>
+            <form id="login-form">
+                <input type="password" id="password" placeholder="Access Password" required>
+                <button type="submit" class="btn btn-primary btn-large">Connect</button>
+            </form>
+            <div id="login-error" class="error-text"></div>
+        </div>
+    </div>
+
+    <!-- App -->
+    <div id="app-view" class="view hidden">
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-target="datasets"><span class="icon">🗂️</span><span class="label">Dataset</span></button>
+            <button class="nav-item" data-target="train"><span class="icon">⚙️</span><span class="label">Train</span></button>
+            <button class="nav-item" data-target="task"><span class="icon">🚀</span><span class="label">Task</span><span id="nav-gpu-badge" class="nav-gpu-badge hidden"></span></button>
+        </nav>
+        <header class="app-header">
+            <h1 id="page-title">Datasets</h1>
+            <div class="header-right">
+                <button id="refresh-page-btn" class="icon-btn">🔄</button>
+                <button id="status-btn" class="icon-btn">📊</button>
+                <button id="logout-btn" class="icon-btn">🚪</button>
+            </div>
+        </header>
+        <!-- Status Panel -->
+        <div id="status-panel" class="status-panel hidden">
+            <div class="status-panel-header"><h3>System Status</h3><button id="status-panel-close" class="close-panel-btn">✕</button></div>
+            <div id="status-panel-content" class="status-panel-body"></div>
+        </div>
+        <div id="status-panel-backdrop" class="status-panel-backdrop hidden"></div>
+
+        <main class="content-area">
+            <!-- Dataset Page -->
+            <section id="datasets" class="page active"><div id="datasets-list"></div></section>
+
+            <!-- ★ Train Page — Full pipeline configuration -->
+            <section id="train" class="page">
+                <!-- GPU Selection -->
+                <div class="pipe-section">
+                    <div class="pipe-section-title">GPU Selection <span class="pipe-hint" id="gpu-timer">auto-refresh 10s</span></div>
+                    <div class="gpu-grid" id="pipe-gpu-grid"><div class="loading-spinner"></div></div>
+                    <div class="pipe-selected-gpus">Selected: <span id="pipe-selected-text">loading...</span></div>
+                    <button class="btn btn-secondary btn-small" style="margin-top:6px" onclick="autoSelectFreeGPUs()">Auto-select Free GPUs</button>
+                </div>
+
+                <!-- Dataset Selection -->
+                <div class="pipe-section">
+                    <div class="pipe-section-title">Dataset</div>
+                    <select id="pipe-dataset-select">
+                        <option value="" disabled selected>Loading datasets...</option>
+                    </select>
+                    <div class="pipe-ds-meta" id="pipe-ds-meta"></div>
+                </div>
+
+                <!-- Experiment Name -->
+                <div class="pipe-section">
+                    <div class="pipe-section-title">Experiment Name</div>
+                    <div class="pipe-row">
+                        <input type="text" id="pipe-exp-name" placeholder="auto-generated from dataset + date">
+                        <button class="btn btn-secondary btn-small" onclick="pipeAutoExpName()">Auto</button>
+                    </div>
+                </div>
+
+                <!-- Advanced Parameters (collapsible) -->
+                <div class="pipe-section">
+                    <div class="pipe-adv-toggle" onclick="togglePipeAdvanced()">
+                        <span id="pipe-adv-arrow">▶</span> Advanced Parameters
+                    </div>
+                    <div class="pipe-adv-panel" id="pipe-adv-panel">
+                        <div class="pipe-form-row">
+                            <label>config_name</label>
+                            <select id="pipe-config-name"></select>
+                        </div>
+                        <div class="pipe-form-row">
+                            <label>batch_size</label>
+                            <input type="number" id="pipe-batch-size" value="64" min="1">
+                        </div>
+                        <div class="pipe-form-row">
+                            <label>fsdp_devices</label>
+                            <input type="number" id="pipe-fsdp-devices" value="4" min="1">
+                        </div>
+                        <div class="pipe-form-row">
+                            <label>num_train_steps</label>
+                            <input type="number" id="pipe-num-train-steps" value="20000" min="1" step="1000">
+                        </div>
+                        <div class="pipe-form-row">
+                            <label>save_interval</label>
+                            <input type="number" id="pipe-save-interval" value="1000" min="100" step="100">
+                        </div>
+                        <div class="pipe-form-row">
+                            <label>min_range</label>
+                            <input type="number" id="pipe-min-range" value="0.1" min="0.01" step="0.01">
+                            <span class="pipe-hint">norm_stats clamp</span>
+                        </div>
+                        <div class="pipe-toggle-row">
+                            <span>wandb</span>
+                            <label class="pipe-toggle"><input type="checkbox" id="pipe-wandb" checked><span class="pipe-slider"></span></label>
+                        </div>
+                        <div class="pipe-toggle-row">
+                            <span>overwrite</span>
+                            <label class="pipe-toggle"><input type="checkbox" id="pipe-overwrite" checked><span class="pipe-slider"></span></label>
+                        </div>
+                        <div class="pipe-toggle-row">
+                            <span>resume</span>
+                            <label class="pipe-toggle"><input type="checkbox" id="pipe-resume"><span class="pipe-slider"></span></label>
+                        </div>
+                        <div class="pipe-toggle-row">
+                            <span>skip norm_stats</span>
+                            <label class="pipe-toggle"><input type="checkbox" id="pipe-skip-norm"><span class="pipe-slider"></span></label>
+                            <span class="pipe-hint">if already computed</span>
+                        </div>
+                        <div class="pipe-toggle-row">
+                            <span>skip postprocess</span>
+                            <label class="pipe-toggle"><input type="checkbox" id="pipe-skip-post"><span class="pipe-slider"></span></label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Start Button -->
+                <div class="pipe-actions">
+                    <button class="btn btn-primary btn-large" id="pipe-btn-start" onclick="startPipeline()">🚀 Start Training Pipeline</button>
+                </div>
+            </section>
+
+            <!-- ★ Task Page — Pipeline execution monitor -->
+            <section id="task" class="page">
+                <!-- GPU Strip -->
+                <div id="gpu-strip" class="gpu-strip"></div>
+
+                <!-- Pipeline Status -->
+                <div class="pipe-exec" id="pipe-exec">
+                    <div class="pipe-section-title" style="margin-bottom:10px">Pipeline Execution</div>
+
+                    <!-- Step 1 -->
+                    <div class="pipe-step" id="step-compute_norm_stats">
+                        <div class="pipe-step-header">
+                            <div class="pipe-step-num" id="psn-0">1</div>
+                            <div class="pipe-step-title">Compute norm_stats</div>
+                            <div class="pipe-step-badge pending" id="psb-compute_norm_stats">pending</div>
+                        </div>
+                        <div class="pipe-step-log" id="psl-compute_norm_stats"></div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="pipe-step" id="step-postprocess_norm_stats">
+                        <div class="pipe-step-header">
+                            <div class="pipe-step-num" id="psn-1">2</div>
+                            <div class="pipe-step-title">Postprocess norm_stats</div>
+                            <div class="pipe-step-badge pending" id="psb-postprocess_norm_stats">pending</div>
+                        </div>
+                        <div class="pipe-step-log" id="psl-postprocess_norm_stats"></div>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div class="pipe-step" id="step-train">
+                        <div class="pipe-step-header">
+                            <div class="pipe-step-num" id="psn-2">3</div>
+                            <div class="pipe-step-title">Train</div>
+                            <div class="pipe-step-badge pending" id="psb-train">pending</div>
+                        </div>
+                        <div class="pipe-step-log" id="psl-train"></div>
+                        <div class="pipe-wandb-link" id="pipe-wandb-link" style="display:none">
+                            WandB: <a id="pipe-wandb-url" href="#" target="_blank"></a>
+                        </div>
+                    </div>
+
+                    <!-- Kill command -->
+                    <div class="pipe-kill-bar" id="pipe-kill-bar" style="display:none">
+                        <span class="pipe-kill-label">终止命令:</span>
+                        <code class="pipe-kill-code" id="pipe-kill-text"></code>
+                        <button class="btn btn-secondary btn-small" onclick="copyKillCmd()">📋</button>
+                    </div>
+
+                    <!-- Cancel button -->
+                    <div class="pipe-actions" style="margin-top:10px">
+                        <button class="btn btn-danger" id="pipe-btn-cancel" onclick="cancelPipeline()" disabled>Cancel Pipeline</button>
+                    </div>
+                </div>
+
+                <!-- Legacy Jobs List (below pipeline) -->
+                <div style="margin-top:16px">
+                    <div class="pipe-section-title">Job History</div>
+                    <div id="job-list"></div>
+                </div>
+                <div id="log-viewer" class="overlay hidden full-height">
+                    <div class="overlay-content">
+                        <div class="overlay-header">
+                            <div class="header-status"><h2 id="log-title">Logs</h2><span id="log-status-badge" class="badge"></span></div>
+                            <div class="header-actions"><button id="stop-job-btn" class="btn btn-danger btn-small hidden">Stop</button><button class="close-overlay">✕</button></div>
+                        </div>
+                        <div id="log-container" class="terminal"></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!--
+      ★ LABELER — full-screen waterfall feed
+      Head-cam video + label chips per episode
+      Infinite scroll, 10 at a time
+    -->
+    <div id="labeler" class="labeler hidden">
+        <div class="labeler-topbar">
+            <button id="labeler-close" class="labeler-back-btn">← Back</button>
+            <div class="labeler-title-area">
+                <span id="labeler-ds-name">Dataset</span>
+                <span id="labeler-count" class="labeler-count"></span>
+            </div>
+            <select id="labeler-filter" class="labeler-filter-select">
+                <option value="all">All</option>
+                <option value="unlabeled">Unlabeled</option>
+            </select>
+        </div>
+        <!-- Scrollable feed -->
+        <div id="labeler-feed" class="labeler-feed">
+            <!-- Episode cards rendered here -->
+        </div>
+    </div>
+
+    <!-- Data Ops overlay -->
+    <div id="data-ops-overlay" class="overlay hidden full-height">
+        <div class="overlay-content">
+            <div class="overlay-header"><h2 id="ops-title">Data Op</h2><button class="close-overlay">✕</button></div>
+            <div class="form-container" id="ops-form"></div>
+            <div class="overlay-actions"><button id="btn-run-ops" class="btn btn-primary">Run</button></div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/static/app.js"></script>
+</body>
+</html>
