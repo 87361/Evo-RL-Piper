@@ -16,8 +16,75 @@ tmux new-session -s download_wbcd -d 'tosutil cp -r tos://drobotics-ailab/users/
 # 附加: 如果想查看下载进度，可以执行 `tmux attach -t download_wbcd`
 ```
 
-## 启动 pi 系列策略
+## 启动 LeRobot 系列策略 (如 ACT, Diffusion, VLA 等)
 
+### Step 1: 转换 v2.1 数据集到 v3.0 格式
+
+通过 LeRobot 自带转换脚本进行原地转换：
+
+```bash
+PYTHONPATH=src python src/lerobot/datasets/v30/convert_dataset_v21_to_v30.py \
+    --repo-id <数据集的子目录名,例如A> \
+    --root <存放数据集A的父目录的绝对路径> \
+    --push-to-hub false
+```
+*(注：转换过程会自动将旧数据移动到 `<repo-id>_old` 目录中，并将新的 v3.0 格式生成在原名的 `<repo-id>` 目录里。)*
+
+### Step 2: 规范底层特征命名
+
+由于 LeRobot 默认提取且只处理名为 `observation.state` 的本体位姿键名，而我们的历史数据中采用的是 `agent_pos`，这里强烈建议跑一个脚本将底层 `parquet` 数据中的列名彻底一次性冲刷提纯。详细参考代码见 👉 `docs/260328.md`。
+
+```bash
+# 修改 `docs/260328.md` 提供的脚本中的 path 路径，然后一键执行：
+python /tmp/convert_parquet_keys.py
+```
+
+### Step 3: 一键启动对应策略
+
+保证数据格式已经无缝贴合 LeRobot 的原生 Pipeline 设计，接下去即可使用干净整洁的方式训练对应模型，且零跑不报错。我们提供两种方式：依赖系统与依赖 `uv`。
+
+#### A: 训练传统免依赖模型 (ACT / Diffusion)
+
+如果模型本身不需要比如大型 `transformers` 依赖，直接在 `evo-rl` 现有环境运行：
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+export CUDA_VISIBLE_DEVICES=0
+export PYTHONPATH=src
+
+python src/lerobot/scripts/lerobot_train.py \
+  --dataset.repo_id=<任意取名> \
+  --dataset.root=/绝对路径/你的v3.0格式数据集文件夹/ \
+  --dataset.revision=v3.0 \
+  --policy.type=act \
+  --policy.device=cuda \
+  --steps=100000 \
+  --batch_size=8 \
+  --num_workers=2
+```
+
+#### B: 训练大型依赖模型 (SmolVLA / XVLA)
+
+对于依赖 `transformers` 等庞大依赖组的 VLA 模型，建议使用轻量的 `uv` 无痕执行。`uv` 将帮你在后台10秒内建立纯净沙盒而绝不弄乱或拖慢现存的 `conda` 环境！
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+export CUDA_VISIBLE_DEVICES=0
+export PYTHONPATH=src
+
+# 注意 --extra 后面写对应的策略名字如 smolvla 或 xvla
+uv run --extra smolvla python src/lerobot/scripts/lerobot_train.py \
+  --dataset.repo_id=<任意取名> \
+  --dataset.root=/绝对路径/你的v3.0格式数据集文件夹/ \
+  --dataset.revision=v3.0 \
+  --policy.type=smolvla \
+  --policy.device=cuda \
+  --steps=100000 \
+  --batch_size=2 \
+  --num_workers=2
+```
+
+## 启动 pi 系列策略
 需要准备 lerobotv2.1 格式的数据，然后计算 norm_stats。
 
 ### Step 1: 计算 norm_stats
