@@ -22,6 +22,7 @@ import numpy as np
 import pytest
 import torch
 
+from lerobot.datasets.dataset_tools import merge_datasets, remove_feature
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.scripts.lerobot_calibrate import CalibrateConfig, calibrate
 from lerobot.scripts.lerobot_human_inloop_record import (
@@ -31,6 +32,7 @@ from lerobot.scripts.lerobot_human_inloop_record import (
     _slow_reset_all_arms_to_pose,
     human_inloop_record,
 )
+from lerobot.scripts.lerobot_patch_hil_dataset_schema import PatchHilDatasetSchemaConfig, patch_hil_dataset_schema
 from lerobot.scripts.lerobot_record import (
     ACPInferenceConfig,
     DatasetRecordConfig,
@@ -43,6 +45,7 @@ from lerobot.scripts.lerobot_record import (
 )
 from lerobot.scripts.lerobot_replay import DatasetReplayConfig, ReplayConfig, replay
 from lerobot.scripts.lerobot_teleoperate import TeleoperateConfig, teleoperate
+from lerobot.utils.recording_annotations import EPISODE_SUCCESS
 from tests.fixtures.constants import DUMMY_REPO_ID
 from tests.mocks.mock_robot import MockRobot, MockRobotConfig
 from tests.mocks.mock_teleop import MockTeleop, MockTeleopConfig
@@ -162,11 +165,84 @@ def test_human_inloop_record_works_without_policy_and_saves_annotations(tmp_path
     assert cfg.intervention_state_machine_enabled is False
     assert cfg.collector_policy_id_policy == "human"
     assert "complementary_info.collector_policy_id" in dataset.features
+    assert "complementary_info.policy_action" in dataset.features
+    assert "complementary_info.is_intervention" in dataset.features
+    assert "complementary_info.state" in dataset.features
 
     reloaded = LeRobotDataset(DUMMY_REPO_ID, root=root)
     assert reloaded[0]["complementary_info.collector_policy_id"] == "human"
+    torch.testing.assert_close(
+        reloaded[0]["complementary_info.policy_action"],
+        torch.zeros_like(reloaded[0]["action"]),
+    )
+    assert float(reloaded[0]["complementary_info.is_intervention"]) == 0.0
+    assert float(reloaded[0]["complementary_info.state"]) == 0.0
     assert "episode_success" in reloaded.meta.episodes.column_names
     assert reloaded.meta.episodes[0]["episode_success"] == "failure"
+
+
+def test_patch_hil_dataset_schema_restores_legacy_dataset_mergeability(tmp_path):
+    robot_cfg = MockRobotConfig()
+    teleop_cfg = MockTeleopConfig()
+    current_root = tmp_path / "hil_current"
+    legacy_root = tmp_path / "hil_legacy"
+    patched_root = tmp_path / "hil_patched"
+    merged_root = tmp_path / "hil_merged"
+    dataset_cfg = DatasetRecordConfig(
+        repo_id=DUMMY_REPO_ID,
+        single_task="Dummy task",
+        root=current_root,
+        num_episodes=1,
+        episode_time_s=0.1,
+        reset_time_s=0,
+        push_to_hub=False,
+    )
+    cfg = RecordConfig(
+        robot=robot_cfg,
+        dataset=dataset_cfg,
+        teleop=teleop_cfg,
+        play_sounds=False,
+    )
+
+    current_dataset = human_inloop_record(cfg)
+    legacy_dataset = remove_feature(
+        current_dataset,
+        feature_names=[
+            "complementary_info.policy_action",
+            "complementary_info.is_intervention",
+            "complementary_info.state",
+        ],
+        output_dir=legacy_root,
+        repo_id="dummy/repo_legacy",
+    )
+    assert "complementary_info.policy_action" not in legacy_dataset.features
+
+    patched_dataset = patch_hil_dataset_schema(
+        PatchHilDatasetSchemaConfig(
+            repo_id="dummy/repo_legacy",
+            root=str(legacy_root),
+            output_repo_id="dummy/repo_patched",
+            output_dir=str(patched_root),
+        )
+    )
+
+    assert "complementary_info.policy_action" in patched_dataset.features
+    assert "complementary_info.is_intervention" in patched_dataset.features
+    assert "complementary_info.state" in patched_dataset.features
+    patched_reloaded = LeRobotDataset("dummy/repo_patched", root=patched_root)
+    torch.testing.assert_close(
+        patched_reloaded[0]["complementary_info.policy_action"],
+        torch.zeros_like(patched_reloaded[0]["action"]),
+    )
+    assert float(patched_reloaded[0]["complementary_info.is_intervention"]) == 0.0
+    assert float(patched_reloaded[0]["complementary_info.state"]) == 0.0
+
+    merged_dataset = merge_datasets(
+        datasets=[current_dataset, patched_dataset],
+        output_repo_id="dummy/repo_merged",
+        output_dir=merged_root,
+    )
+    assert merged_dataset.meta.total_episodes == current_dataset.meta.total_episodes + patched_dataset.meta.total_episodes
 
 
 def test_record_loop_sets_leader_manual_control_during_reset():
@@ -275,6 +351,34 @@ def test_human_inloop_failure_reset_controller_reuses_existing_pose(tmp_path):
     assert controller.failure_reset_pose == {"motor_1.pos": 1.0, "motor_2.pos": -2.0}
     mock_input.assert_not_called()
     mock_save.assert_not_called()
+
+
+def test_human_inloop_failure_reset_controller_resets_on_success(tmp_path):
+    robot_cfg = MockRobotConfig()
+    teleop_cfg = MockTeleopConfig()
+    dataset_cfg = DatasetRecordConfig(
+        repo_id=DUMMY_REPO_ID,
+        single_task="Dummy task",
+        root=tmp_path / "hil_with_policy_success_reset",
+        num_episodes=1,
+        episode_time_s=0.1,
+        reset_time_s=0,
+        push_to_hub=False,
+    )
+    cfg = RecordConfig(
+        robot=robot_cfg,
+        dataset=dataset_cfg,
+        teleop=teleop_cfg,
+        play_sounds=False,
+    )
+    controller = _HumanInloopFailureResetController(cfg)
+    controller.failure_reset_pose = {"motor_1.pos": 1.0, "motor_2.pos": -2.0}
+
+    with patch("lerobot.scripts.lerobot_human_inloop_record._slow_reset_all_arms_to_pose") as mock_reset:
+        controller.on_episode_outcome(robot=MagicMock(), teleop=MagicMock(), episode_success=EPISODE_SUCCESS)
+
+    mock_reset.assert_called_once()
+    assert mock_reset.call_args.kwargs["target_pose"] == {"motor_1.pos": 1.0, "motor_2.pos": -2.0}
 
 
 def test_slow_reset_all_arms_to_pose_uses_interpolation():
