@@ -115,7 +115,7 @@ def env_to_policy_features(env_cfg: EnvConfig) -> dict[str, PolicyFeature]:
     # (need to also refactor preprocess_observation and externalize normalization from policies)
     policy_features = {}
     for key, ft in env_cfg.features.items():
-        if ft.type is FeatureType.VISUAL:
+        if ft.type in (FeatureType.VISUAL, FeatureType.DEPTH):
             if len(ft.shape) != 3:
                 raise ValueError(f"Number of dimensions of {key} != 3 (shape={ft.shape})")
 

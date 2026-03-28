@@ -126,7 +126,13 @@ def prepare_observation_for_inference(
     """
     for name in observation:
         observation[name] = torch.from_numpy(observation[name])
-        if "image" in name:
+        if "depth" in name.lower():
+            observation[name] = observation[name].type(torch.float32)
+            if observation[name].ndim == 2:
+                observation[name] = observation[name].unsqueeze(0)
+            elif observation[name].ndim == 3 and observation[name].shape[-1] in (1, 3):
+                observation[name] = observation[name].permute(2, 0, 1).contiguous()
+        elif "image" in name:
             observation[name] = observation[name].type(torch.float32) / 255
             observation[name] = observation[name].permute(2, 0, 1).contiguous()
         observation[name] = observation[name].unsqueeze(0)
@@ -238,8 +244,9 @@ def validate_visual_features_consistency(
         cfg (PreTrainedConfig): The model or policy configuration containing input_features and type.
         features (Dict[str, PolicyFeature]): A mapping of feature names to PolicyFeature objects.
     """
-    expected_visuals = {k for k, v in cfg.input_features.items() if v.type == FeatureType.VISUAL}
-    provided_visuals = {k for k, v in features.items() if v.type == FeatureType.VISUAL}
+    visual_types = {FeatureType.VISUAL, FeatureType.DEPTH}
+    expected_visuals = {k for k, v in cfg.input_features.items() if v.type in visual_types}
+    provided_visuals = {k for k, v in features.items() if v.type in visual_types}
 
     # Accept if either direction is a subset
     policy_subset_of_dataset = expected_visuals.issubset(provided_visuals)

@@ -156,6 +156,8 @@ def detect_features_and_norm_modes(
             try:
                 if feature_type_str == "VISUAL":
                     feature_type = FeatureType.VISUAL
+                elif feature_type_str == "DEPTH":
+                    feature_type = FeatureType.DEPTH
                 elif feature_type_str == "STATE":
                     feature_type = FeatureType.STATE
                 elif feature_type_str == "ACTION":
@@ -193,7 +195,9 @@ def detect_features_and_norm_modes(
             shape = (shape,) if isinstance(shape, int) else tuple(shape)
 
             # Determine feature type
-            if "image" in key or "visual" in key:
+            if "depth" in key.lower():
+                feature_type = FeatureType.DEPTH
+            elif "image" in key or "visual" in key:
                 feature_type = FeatureType.VISUAL
             elif "state" in key:
                 feature_type = FeatureType.STATE
@@ -212,7 +216,9 @@ def detect_features_and_norm_modes(
             shape = tuple(tensor.shape)
 
             # Determine feature type based on key
-            if "image" in key or "visual" in key or "pixels" in key:
+            if "depth" in key.lower():
+                feature_type = FeatureType.DEPTH
+            elif "image" in key or "visual" in key or "pixels" in key:
                 feature_type = FeatureType.VISUAL
             elif "state" in key or "joint" in key or "position" in key:
                 feature_type = FeatureType.STATE
@@ -239,6 +245,8 @@ def detect_features_and_norm_modes(
     # Default normalization modes if not detected
     if FeatureType.VISUAL not in norm_modes:
         norm_modes[FeatureType.VISUAL] = NormalizationMode.MEAN_STD
+    if FeatureType.DEPTH not in norm_modes:
+        norm_modes[FeatureType.DEPTH] = NormalizationMode.MIN_MAX
     if FeatureType.STATE not in norm_modes:
         norm_modes[FeatureType.STATE] = NormalizationMode.MIN_MAX
     if FeatureType.ACTION not in norm_modes:
@@ -377,7 +385,9 @@ def convert_features_to_policy_features(features_dict: dict[str, dict]) -> dict[
 
     for key, feature_dict in features_dict.items():
         # Determine feature type based on key
-        if "image" in key or "visual" in key:
+        if "depth" in key.lower():
+            feature_type = FeatureType.DEPTH
+        elif "image" in key or "visual" in key:
             feature_type = FeatureType.VISUAL
         elif "state" in key:
             feature_type = FeatureType.STATE

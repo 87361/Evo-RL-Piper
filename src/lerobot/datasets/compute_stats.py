@@ -245,6 +245,22 @@ def sample_images(image_paths: list[str]) -> np.ndarray:
     return images
 
 
+def sample_depth(data: np.ndarray) -> np.ndarray:
+    """Sample and downsample depth maps from a batch array.
+
+    Args:
+        data: A (B, C, H, W) array of depth data (typically uint16 or float).
+
+    Returns:
+        A (N, C, H', W') array of sampled and optionally downsampled depth maps.
+    """
+    sampled_indices = sample_indices(len(data))
+    sampled = []
+    for idx in sampled_indices:
+        sampled.append(auto_downsample_height_width(data[idx]))
+    return np.array(sampled)
+
+
 def _reshape_stats_by_axis(
     stats: dict[str, np.ndarray],
     axis: int | tuple[int, ...] | None,
@@ -512,6 +528,10 @@ def compute_episode_stats(
             ep_ft_array = sample_images(data)
             axes_to_reduce = (0, 2, 3)
             keepdims = True
+        elif features[key]["dtype"] == "uint16":
+            ep_ft_array = sample_depth(data)
+            axes_to_reduce = (0, 2, 3)
+            keepdims = True
         else:
             ep_ft_array = data
             axes_to_reduce = 0
@@ -524,6 +544,10 @@ def compute_episode_stats(
         if features[key]["dtype"] in ["image", "video"]:
             ep_stats[key] = {
                 k: v if k == "count" else np.squeeze(v / 255.0, axis=0) for k, v in ep_stats[key].items()
+            }
+        elif features[key]["dtype"] == "uint16":
+            ep_stats[key] = {
+                k: v if k == "count" else np.squeeze(v, axis=0) for k, v in ep_stats[key].items()
             }
 
     return ep_stats

@@ -646,10 +646,11 @@ def hw_to_dataset_features(
         dict: A LeRobot features dictionary.
     """
     features = {}
+    _image_like_types = {FeatureType.VISUAL, FeatureType.DEPTH}
     joint_fts = {
         key: ftype
         for key, ftype in hw_features.items()
-        if ftype is float or (isinstance(ftype, PolicyFeature) and ftype.type != FeatureType.VISUAL)
+        if ftype is float or (isinstance(ftype, PolicyFeature) and ftype.type not in _image_like_types)
     }
     cam_fts = {key: shape for key, shape in hw_features.items() if isinstance(shape, tuple)}
 
@@ -727,8 +728,11 @@ def dataset_to_policy_features(features: dict[str, dict]) -> dict[str, PolicyFea
     policy_features = {}
     for key, ft in features.items():
         shape = ft["shape"]
-        if ft["dtype"] in ["image", "video"]:
-            type = FeatureType.VISUAL
+        if ft["dtype"] in ["image", "video", "uint16"]:
+            if "depth" in key.lower():
+                type = FeatureType.DEPTH
+            else:
+                type = FeatureType.VISUAL
             if len(shape) != 3:
                 raise ValueError(f"Number of dimensions of {key} != 3 (shape={shape})")
 
