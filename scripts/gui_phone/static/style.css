@@ -174,6 +174,29 @@ select:focus{border-color:var(--ac)}
 /* ════════════════════════════════════════════
    ★ PIPELINE — Train & Task pages
    ════════════════════════════════════════════ */
+
+.train-mode-tabs {
+    display: flex; gap: 8px; margin-bottom: 12px;
+}
+.train-mode-tab {
+    flex: 1; display:flex; flex-direction: column; align-items:center; justify-content:center;
+    background:var(--sf); border:1px solid var(--bd); border-radius:var(--r);
+    padding:10px 4px; cursor:pointer; transition:all 0.2s;
+}
+.train-mode-tab:active { transform: scale(0.98); }
+.train-mode-tab.active { background: rgba(59,130,246,0.1); border-color:var(--ac); }
+.train-tab-icon { font-size: 20px; margin-bottom: 4px; }
+.train-tab-label { font-size: 13px; font-weight: 600; color:var(--t1); }
+.train-mode-tab.active .train-tab-label { color:var(--ac); }
+.train-tab-sub { font-size: 10px; color:var(--t2); margin-top:2px; }
+
+.lr-policy-grid {
+    display:grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px;
+}
+.lr-policy-btn {
+    padding:8px; font-size:12px;
+}
+
 .pipe-section{
     background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);
     padding:10px 12px;margin-bottom:8px;
@@ -237,6 +260,7 @@ select:focus{border-color:var(--ac)}
 .pipe-adv-toggle:hover{color:#60a5fa}
 .pipe-adv-panel{display:none;border-top:1px solid var(--bd);padding-top:10px;margin-top:8px}
 .pipe-adv-panel.open{display:block}
+.lr-policy-params-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--acc);margin:12px 0 8px;padding-bottom:4px;border-bottom:1px dashed var(--bd)}
 
 .pipe-form-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
 .pipe-form-row label{min-width:100px;font-size:11px;color:var(--t2);text-align:right;flex-shrink:0}
@@ -302,3 +326,33 @@ select:focus{border-color:var(--ac)}
     font-family:'Fira Code','Consolas',monospace;font-size:11px;
     flex:1;user-select:all;word-break:break-all;
 }
+
+/* ════════════════════════════════════════════
+   ★ SUBTASK TIMELINE ANNOTATOR
+   ════════════════════════════════════════════ */
+.subtask-toggle {
+    font-size:11px;color:var(--t2);cursor:pointer;
+    margin-top:8px;display:inline-block;padding:5px 10px;
+    border:1px dashed var(--bd);border-radius:6px;
+    transition:all .15s;
+}
+.subtask-toggle:hover { color:var(--ac);border-color:var(--ac);background:rgba(59,130,246,.05); }
+.subtask-panel {
+    background:var(--sf2);border:1px solid var(--bd);
+    border-radius:8px;padding:10px;margin-top:6px;
+    display:none;
+}
+.subtask-panel.open { display:block;animation:fadeIn 0.2s; }
+.st-time-controls {
+    display:flex;align-items:center;gap:8px;margin-bottom:10px;
+}
+.st-time-display {
+    font-family:monospace;font-size:11.5px;color:var(--ac);
+    background:var(--bg);padding:4px 10px;border-radius:4px;
+    min-width:55px;text-align:center;font-weight:600;
+}
+.st-cat-controls {
+    display:flex;gap:8px;
+}
+.st-cat-controls select { flex:1;padding:8px;font-size:12px;background:var(--bg); }
+.st-cat-controls button { flex:1;font-weight:600; }

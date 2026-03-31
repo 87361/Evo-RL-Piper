@@ -61,6 +61,17 @@ OPENPI_ROOT = PROJECT_ROOT / "third_party" / "openpi"
 # Available OpenPI training configs
 TRAIN_CONFIG_NAMES = [
     "pi05_aloha_wbcd_lora",
+    "pi05_aloha_wbcd_4cam_lora",
     "pi0_aloha_pen_uncap",
     "pi05_aloha_pen_uncap",
 ]
+
+# LeRobot policy types
+# "lightweight" policies can be trained with `python src/lerobot/scripts/lerobot_train.py`
+# "heavy" policies require `uv run --extra <name> python ...` for extra deps
+LEROBOT_POLICY_TYPES = {
+    "act":       {"label": "ACT",       "kind": "lightweight", "default_batch": 8, "default_steps": 100000},
+    "diffusion": {"label": "Diffusion", "kind": "lightweight", "default_batch": 8, "default_steps": 400000},
+    "smolvla":   {"label": "SmolVLA",   "kind": "heavy",       "default_batch": 32, "default_steps": 100000, "extra": "smolvla"},
+    "xvla":      {"label": "XVLA",      "kind": "heavy",       "default_batch": 32, "default_steps": 100000, "extra": "xvla"},
+}

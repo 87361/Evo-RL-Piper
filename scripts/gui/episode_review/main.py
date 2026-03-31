@@ -2,8 +2,12 @@
 """Headless-friendly web GUI for episode task review (multi-category, grid view)."""
 from __future__ import annotations
 
+import sys
 import argparse
 from pathlib import Path
+_this_dir = Path(__file__).resolve().parent
+if str(_this_dir) not in sys.path:
+    sys.path.insert(0, str(_this_dir))
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
@@ -56,7 +60,7 @@ LAUNCHER_PAGE = """<!doctype html>
       btn.innerText = '刷新中...';
       btn.disabled = true;
       try {
-        const res = await fetch('/api/datasets/refresh', {method: 'POST'});
+        const res = await fetch('api/datasets/refresh', {method: 'POST'});
         const d = await res.json();
         render(d);
       } catch (err) {
@@ -67,7 +71,7 @@ LAUNCHER_PAGE = """<!doctype html>
       }
     }
     async function load(){
-      const res = await fetch('/api/datasets');
+      const res = await fetch('api/datasets');
       const d = await res.json();
       render(d);
     }
@@ -203,7 +207,7 @@ def _build_launcher_app(
                 "total_episodes": int(ds.get("total_episodes", 0)),
                 "preview_episode_count": int(preview_episode_count),
                 "fps": int(ds.get("fps", 0)),
-                "entry_url": f"{mount_path}/",
+                "entry_url": f"review/{idx}/",
             }
         )
         return True

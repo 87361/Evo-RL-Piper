@@ -39,6 +39,27 @@ os.makedirs(config.TEMPLATES_DIR, exist_ok=True)
 # Mount static files
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+import argparse
+import sys
+from fastapi.responses import RedirectResponse
+_req_project_root = Path(__file__).resolve().parents[2]
+if str(_req_project_root) not in sys.path:
+    sys.path.append(str(_req_project_root))
+from scripts.gui.episode_review.main import _build_launcher_app, _resolve_scan_root
+_pc_args = argparse.Namespace(datasets_scan_root=None, video_root=None, label_csv=None, categories_json=None, merge_sources=None)
+_pc_scan_root = _resolve_scan_root(_pc_args)
+computer_app = _build_launcher_app(scan_root=_pc_scan_root, categories_json=None, merge_sources=None)
+app.mount("/computer", computer_app)
+
+@app.middleware("http")
+async def verify_computer_access(request: Request, call_next):
+    if request.url.path.startswith("/computer"):
+        try:
+            auth.require_auth(request)
+        except Exception:
+            return RedirectResponse(url="/")
+    return await call_next(request)
+
 # Track server start time
 SERVER_START_TIME = time.time()
 
@@ -78,6 +99,51 @@ class PipelineStartRequest(BaseModel):
     wandb_enabled: bool = True
     skip_norm_stats: bool = False
     skip_postprocess: bool = False
+    # ── Open-loop eval (auto after train) ──
+    skip_eval: bool = False
+    eval_prompt: str = "pick and place"
+    eval_episodes: str = "all"       # comma-separated or 'all'
+    eval_device: str = "cuda"
+
+
+class LerobotTrainRequest(BaseModel):
+    dataset_path: str           # Full path to v3.0 _lerobot dataset
+    policy_type: str = "act"    # act, diffusion, smolvla, xvla
+    gpu_indices: list = []
+    batch_size: int = 8
+    steps: int = 100000
+    num_workers: int = 2
+    # ── Training-level params ──
+    seed: int = 1000
+    save_freq: int = 20000
+    log_freq: int = 200
+    output_dir: str = ""        # empty = auto
+    wandb_enabled: bool = False
+    wandb_project: str = "lerobot"
+    image_aug_enabled: bool = False
+    image_aug_max_num: int = 3
+    # ── Optimizer / LR ──
+    optimizer_lr: Optional[float] = None      # policy default if None
+    optimizer_weight_decay: Optional[float] = None
+    # ── ACT-specific ──
+    act_chunk_size: int = 100
+    act_n_action_steps: int = 100
+    act_dim_model: int = 512
+    act_n_heads: int = 8
+    act_use_vae: bool = True
+    act_latent_dim: int = 32
+    act_kl_weight: float = 10.0
+    act_dropout: float = 0.1
+    act_vision_backbone: str = "resnet18"
+    # ── Diffusion-specific ──
+    diff_horizon: int = 16
+    diff_n_action_steps: int = 8
+    diff_n_obs_steps: int = 2
+    diff_noise_scheduler: str = "DDPM"  # DDPM or DDIM
+    diff_num_train_timesteps: int = 100
+    diff_prediction_type: str = "epsilon"  # epsilon or sample
+    diff_scheduler_warmup_steps: int = 500
+    diff_vision_backbone: str = "resnet18"
 
 
 class LabelPayload(BaseModel):
@@ -87,9 +153,21 @@ class LabelPayload(BaseModel):
     note: str = ""
 
 
+class LabelAllPayload(BaseModel):
+    dataset_root: str
+    label: str
+
+
 class CategoryPayload(BaseModel):
     dataset_root: str
     name: str
+
+class SubtaskPayload(BaseModel):
+    dataset_root: str
+    episode_id: str
+    start_time: float
+    end_time: float
+    subtask: str
 
 
 class DataOpPayload(BaseModel):
@@ -254,7 +332,7 @@ async def get_dataset_meta(path: str, _=Depends(require_login)):
     
     # Count episodes with video
     video_root = ds_path / "videos"
-    episodes = data_ops.discover(video_root) if video_root.exists() else {}
+    episodes = data_ops.discover(ds_path) if video_root.exists() else {}
     
     return {
         "path": path,
@@ -274,7 +352,7 @@ async def list_episodes(path: str, q: str = "", lf: str = "all", page: int = 1, 
          return {"items": [], "total": 0}
          
     label_csv = ds_path / "task_labels.csv"
-    episodes = data_ops.discover(video_root)
+    episodes = data_ops.discover(ds_path)
     labels = data_ops.load_csv(label_csv)
     
     items = []
@@ -321,7 +399,7 @@ async def get_episode_details(path: str, episode_id: str, _=Depends(require_logi
     """Get video URLs for an episode."""
     ds_path = Path(path)
     video_root = ds_path / "videos"
-    episodes = data_ops.discover(video_root)
+    episodes = data_ops.discover(ds_path)
     
     if episode_id not in episodes:
         raise HTTPException(status_code=404, detail="Episode not found")
@@ -403,6 +481,58 @@ async def save_label(payload: LabelPayload, _=Depends(require_login)):
     }
     data_ops.write_csv(label_csv, labels)
     return {"ok": True, "categories": categories}
+
+
+@app.post("/api/dataset/label_all")
+async def label_all(payload: LabelAllPayload, _=Depends(require_login)):
+    """Apply a label to all episodes in a dataset."""
+    ds_path = Path(payload.dataset_root)
+    label_csv = ds_path / "task_labels.csv"
+    
+    labels = data_ops.load_csv(label_csv)
+    episodes = data_ops.discover(ds_path)
+    cat_path = data_ops.categories_path(label_csv)
+    categories = data_ops.load_categories(cat_path, labels)
+    
+    normalized_label = payload.label.strip()
+    if normalized_label and normalized_label not in categories:
+        categories.append(normalized_label)
+        data_ops.write_categories(cat_path, categories)
+        
+    for ep in episodes.keys():
+        labels[ep] = {
+            "episode_id": ep,
+            "label": normalized_label,
+            "note": labels.get(ep, {}).get("note", ""),
+            "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")
+        }
+    
+    data_ops.write_csv(label_csv, labels)
+    return {"ok": True, "categories": categories, "affected": len(episodes)}
+
+
+
+@app.post("/api/dataset/subtask")
+async def save_subtask_segment(payload: SubtaskPayload, _=Depends(require_login)):
+    """Apply frame-level subtask annotation to Parquet."""
+    ds_path = Path(payload.dataset_root)
+    if not ds_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset not found")
+        
+    try:
+        data_ops.save_subtask_segment(
+            dataset_root=ds_path,
+            episode_id=payload.episode_id,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            subtask=payload.subtask
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+        
+    return {"status": "ok"}
 
 
 @app.post("/api/dataset/category/add")
@@ -912,7 +1042,7 @@ async def stop_job(job_id: str, _=Depends(require_login)):
 # Mirrors train_pipeline_gui.py logic; auto-postprocess without user confirm
 # ──────────────────────────────────────────────
 
-STEP_NAMES = ["compute_norm_stats", "postprocess_norm_stats", "train"]
+STEP_NAMES = ["compute_norm_stats", "postprocess_norm_stats", "train", "open_loop_eval"]
 
 _pipeline: Dict[str, any] = {
     "running": False,
@@ -1115,11 +1245,23 @@ def _run_pipeline_thread(req: PipelineStartRequest):
             return
 
         _pipe_set_status(step, "running")
+        
+        # Resolve duplicate exp_name automatically
+        exp_name = req.exp_name
+        base_exp_name = exp_name
+        idx = 0
+        while True:
+            chk_dir = openpi_root / "checkpoints" / req.config_name / exp_name
+            if not chk_dir.exists():
+                break
+            exp_name = f"{base_exp_name}_{idx}"
+            idx += 1
+
         cmd = [
-            "uv", "run", "--active", "--no-sync",
+            "uv", "run", "--active",
             "scripts/train.py", req.config_name,
             f"--project-name=EvoRL-Piper",
-            f"--exp-name={req.exp_name}",
+            f"--exp-name={exp_name}",
             f"--batch-size={req.batch_size}",
             f"--fsdp-devices={req.fsdp_devices}",
             f"--num-train-steps={req.num_train_steps}",
@@ -1129,8 +1271,6 @@ def _run_pipeline_thread(req: PipelineStartRequest):
             cmd.append("--wandb-enabled")
         else:
             cmd.append("--no-wandb-enabled")
-        if req.overwrite:
-            cmd.append("--overwrite")
         if req.resume:
             cmd.append("--resume")
 
@@ -1141,9 +1281,89 @@ def _run_pipeline_thread(req: PipelineStartRequest):
         if rc != 0:
             _pipe_set_status(step, "failed")
             _pipe_append_log(step, f"\n--- Exit code: {rc} ---\n")
+            _pipeline["running"] = False
+            return
         else:
             _pipe_set_status(step, "completed")
             _pipe_append_log(step, "\n--- Training completed successfully ---\n")
+
+        # --- Step 4: open_loop_eval ---
+        step = "open_loop_eval"
+        _pipeline["current_step"] = step
+        _pipeline["current_step_idx"] = 3
+
+        if req.skip_eval:
+            _pipe_set_status(step, "skipped")
+            _pipe_append_log(step, "--- Skipped by user ---\n")
+        elif _pipeline["cancelled"]:
+            _pipe_set_status(step, "cancelled")
+        else:
+            _pipe_set_status(step, "running")
+
+            # Resolve checkpoint dir: <openpi_root>/checkpoints/<config_name>/<exp_name>
+            ckpt_dir = openpi_root / "checkpoints" / req.config_name / exp_name
+            _pipe_append_log(step, f"Checkpoint dir: {ckpt_dir}\n")
+
+            # Find the latest step directory
+            if ckpt_dir.exists():
+                step_dirs = sorted(
+                    [d for d in ckpt_dir.iterdir() if d.is_dir() and d.name.isdigit()],
+                    key=lambda d: int(d.name),
+                )
+            else:
+                step_dirs = []
+
+            if not step_dirs:
+                _pipe_append_log(step, f"WARNING: No step directories found in {ckpt_dir}. Skipping eval.\n")
+                _pipe_set_status(step, "skipped")
+            else:
+                latest_step = step_dirs[-1].name
+                _pipe_append_log(step, f"Evaluating latest checkpoint step: {latest_step}\n")
+
+                # Resolve dataset repo_id from the dataset_path
+                ds_path = Path(req.dataset_path)
+                # Use the parent_dir/name convention that open_loop_eval expects
+                repo_id = f"{ds_path.parent.name}/{ds_path.name}"
+                _pipe_append_log(step, f"Dataset repo_id: {repo_id}\n")
+                _pipe_append_log(step, f"Prompt: {req.eval_prompt}\n")
+                _pipe_append_log(step, f"Episodes: {req.eval_episodes}\n")
+
+                eval_output_dir = str(project_root / "tmp" / "open_loop_eval")
+
+                # Use the openpi venv's Python to run the eval script
+                # (it needs openpi + lerobot dependencies)
+                openpi_venv_python = str(openpi_root / ".venv" / "bin" / "python")
+                eval_script = str(project_root / "scripts" / "open_loop_eval.py")
+
+                eval_cmd = [
+                    openpi_venv_python, eval_script,
+                    "--checkpoint-dir", str(ckpt_dir),
+                    "--step", latest_step,
+                    "--config-name", req.config_name,
+                    "--repo-id", repo_id,
+                    "--episodes", req.eval_episodes,
+                    "--prompt", req.eval_prompt,
+                    "--device", req.eval_device,
+                    "--output-dir", eval_output_dir,
+                ]
+
+                # For eval, only use a single GPU
+                eval_env = {**env}
+                if req.gpu_indices:
+                    eval_env["CUDA_VISIBLE_DEVICES"] = str(req.gpu_indices[0])
+                else:
+                    eval_env["CUDA_VISIBLE_DEVICES"] = "0"
+
+                rc = _pipe_run_subprocess(eval_cmd, step, str(project_root), eval_env, timeout=7200)
+                if _pipeline["cancelled"]:
+                    _pipe_set_status(step, "cancelled")
+                    return
+                if rc != 0:
+                    _pipe_set_status(step, "failed")
+                    _pipe_append_log(step, f"\n--- Eval exit code: {rc} ---\n")
+                else:
+                    _pipe_set_status(step, "completed")
+                    _pipe_append_log(step, f"\n--- Open-loop eval completed. Results in {eval_output_dir}/step_{latest_step}/ ---\n")
 
     except Exception as exc:
         step = _pipeline["current_step"] or "train"
@@ -1170,6 +1390,16 @@ async def pipeline_defaults(_=Depends(require_login)):
         "save_interval": 1000,
         "min_range": 0.1,
         "openpi_root": str(config.OPENPI_ROOT),
+        "eval_prompt": "pick and place",
+        "eval_episodes": "all",
+    }
+
+
+@app.get("/api/lerobot/defaults")
+async def lerobot_defaults(_=Depends(require_login)):
+    """Return LeRobot policy types and defaults."""
+    return {
+        "policy_types": config.LEROBOT_POLICY_TYPES,
     }
 
 
@@ -1285,6 +1515,378 @@ async def pipeline_cancel(_=Depends(require_login)):
     """Cancel the running pipeline."""
     _pipeline["cancelled"] = True
     proc = _pipeline.get("process")
+    if proc and proc.poll() is None:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    return {"ok": True}
+
+
+# ──────────────────────────────────────────────
+# LeRobot Training Pipeline
+# ──────────────────────────────────────────────
+
+# ──────────────────────────────────────────────
+# LeRobot Training Pipeline
+# ──────────────────────────────────────────────
+
+LEROBOT_STEP_NAMES = ["format_data", "train"]
+
+_lerobot_pipeline: Dict[str, any] = {
+    "running": False,
+    "current_step": "",
+    "current_step_idx": -1,
+    "steps": {name: {"status": "pending", "logs": ""} for name in LEROBOT_STEP_NAMES},
+    "config": {},
+    "process": None,
+    "pid": None,
+    "pgid": None,
+    "cancelled": False,
+    "wandb_url": "",
+}
+_lerobot_lock = threading.Lock()
+
+
+def _lerobot_append_log(step: str, text: str):
+    with _lerobot_lock:
+        _lerobot_pipeline["steps"][step]["logs"] += text
+
+def _lerobot_set_status(step: str, st: str):
+    with _lerobot_lock:
+        _lerobot_pipeline["steps"][step]["status"] = st
+
+def _lerobot_run_subprocess(cmd, step, cwd, env, timeout=86400):
+    _lerobot_append_log(step, f"$ {' '.join(str(c) for c in cmd)}\n")
+    _lerobot_append_log(step, f"  cwd: {cwd}\n\n")
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        cwd=cwd, env=env, text=True, bufsize=1,
+        preexec_fn=os.setsid,
+    )
+    _lerobot_pipeline["process"] = proc
+    _lerobot_pipeline["pid"] = proc.pid
+    try:
+        _lerobot_pipeline["pgid"] = os.getpgid(proc.pid)
+    except OSError:
+        _lerobot_pipeline["pgid"] = proc.pid
+    _lerobot_append_log(step, f"  pid: {_lerobot_pipeline['pid']}, pgid: {_lerobot_pipeline['pgid']}\n")
+
+    def _reader():
+        for line in proc.stdout:
+            _lerobot_append_log(step, line)
+            if step == "train" and "wandb" in line.lower() and "http" in line:
+                m = re.search(r'(https?://\S+)', line)
+                if m:
+                    _lerobot_pipeline["wandb_url"] = m.group(1)
+
+    reader_t = threading.Thread(target=_reader, daemon=True)
+    reader_t.start()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        _lerobot_append_log(step, f"\n--- TIMEOUT after {timeout}s ---\n")
+        _lerobot_pipeline["process"] = None
+        _lerobot_pipeline["pid"] = None
+        _lerobot_pipeline["pgid"] = None
+        return -1
+    reader_t.join(timeout=5)
+    _lerobot_pipeline["process"] = None
+    _lerobot_pipeline["pid"] = None
+    _lerobot_pipeline["pgid"] = None
+    return proc.returncode or 0
+
+
+def _run_lerobot_train_thread(req: LerobotTrainRequest):
+    project_root = config.PROJECT_ROOT
+
+    cuda_visible = ",".join(str(i) for i in req.gpu_indices) if req.gpu_indices else "0"
+    env = {
+        **os.environ,
+        "HF_ENDPOINT": "https://hf-mirror.com",
+        "CUDA_VISIBLE_DEVICES": cuda_visible,
+        "PYTHONPATH": str(project_root / "src"),
+    }
+    hf_token = os.environ.get("HF_TOKEN", "")
+    if hf_token:
+        env["HF_TOKEN"] = hf_token
+    wandb_key = os.environ.get("WANDB_API_KEY", "")
+    if wandb_key:
+        env["WANDB_API_KEY"] = wandb_key
+
+    try:
+        # Check if dataset is already a _lerobot format
+        ds_path = Path(req.dataset_path)
+        base_name = ds_path.name
+        is_lerobot_format = base_name.endswith("_lerobot")
+        
+        target_ds_path = ds_path
+        target_repo_id = base_name
+        
+        # --- Step 1: format_data ---
+        step = "format_data"
+        _lerobot_pipeline["current_step"] = step
+        _lerobot_pipeline["current_step_idx"] = 0
+        
+        if _lerobot_pipeline["cancelled"]:
+            _lerobot_set_status(step, "cancelled")
+            return
+            
+        _lerobot_set_status(step, "running")
+        if not is_lerobot_format:
+            _lerobot_append_log(step, f"Dataset '{base_name}' is not in _lerobot format.\n")
+            target_repo_id = f"{base_name}_lerobot"
+            target_ds_path = ds_path.parent / target_repo_id
+            
+            _lerobot_append_log(step, "Will now perform v2.1 -> v3.0 conversion and keys renaming...\n")
+            script_content = f"""
+import os, sys, shutil, json, subprocess
+from pathlib import Path
+import pandas as pd
+
+orig = Path('{ds_path}')
+target = Path('{target_ds_path}')
+workspace = Path('{project_root}')
+
+print("1. Copying dataset copy to " + str(target))
+if target.exists():
+    shutil.rmtree(target)
+shutil.copytree(orig, target)
+
+print("2. Running convert_dataset_v21_to_v30.py")
+cmd = [
+    sys.executable,
+    str(workspace / 'src' / 'lerobot' / 'datasets' / 'v30' / 'convert_dataset_v21_to_v30.py'),
+    "--repo-id", "{target_repo_id}",
+    "--root", str(orig.parent),
+    "--push-to-hub", "false"
+]
+env = os.environ.copy()
+env['PYTHONPATH'] = str(workspace / 'src')
+subprocess.run(cmd, env=env, check=True)
+
+backup_path = orig.parent / "{target_repo_id}_old"
+if backup_path.exists():
+    print("Removing backup dir: " + str(backup_path))
+    shutil.rmtree(backup_path)
+
+print("3. Renaming dataset columns (agent_pos -> observation.state)")
+info_path = target / 'meta' / 'info.json'
+if info_path.exists():
+    with open(info_path) as f:
+        info = json.load(f)
+    if 'agent_pos' in info.get('features', {{}}):
+        info['features']['observation.state'] = info['features'].pop('agent_pos')
+        with open(info_path, 'w') as f:
+            json.dump(info, f, indent=4)
+        print("info.json modified.")
+
+stats_path = target / 'meta' / 'stats.json'
+if stats_path.exists():
+    with open(stats_path) as f:
+        stats = json.load(f)
+    if 'agent_pos' in stats:
+        stats['observation.state'] = stats.pop('agent_pos')
+        with open(stats_path, 'w') as f:
+            json.dump(stats, f, indent=4)
+        print("stats.json modified.")
+
+for pq_file in target.rglob('*.parquet'):
+    df = pd.read_parquet(pq_file)
+    renames = {{c: c.replace('agent_pos', 'observation.state') for c in df.columns if 'agent_pos' in c}}
+    if renames:
+        df.rename(columns=renames, inplace=True)
+        df.to_parquet(pq_file)
+        print(f"{{pq_file.name}} modified: {{renames}}")
+
+print("Format complete!")
+"""
+            cmd = [sys.executable, "-c", script_content]
+            rc = _lerobot_run_subprocess(cmd, step, str(project_root), env, timeout=7200)
+            if _lerobot_pipeline["cancelled"]:
+                _lerobot_set_status(step, "cancelled")
+                return
+            if rc != 0:
+                _lerobot_set_status(step, "failed")
+                _lerobot_pipeline["running"] = False
+                return
+        else:
+            _lerobot_append_log(step, "Dataset is already in _lerobot format. Skipping conversion.\n")
+            
+        _lerobot_set_status(step, "completed")
+        
+        # --- Step 2: train ---
+        step = "train"
+        _lerobot_pipeline["current_step"] = step
+        _lerobot_pipeline["current_step_idx"] = 1
+        
+        if _lerobot_pipeline["cancelled"]:
+            _lerobot_set_status(step, "cancelled")
+            return
+            
+        _lerobot_set_status(step, "running")
+
+        policy_meta = config.LEROBOT_POLICY_TYPES.get(req.policy_type, {})
+        kind = policy_meta.get("kind", "lightweight")
+        extra = policy_meta.get("extra", "")
+
+        # Build command
+        train_script = str(project_root / "src" / "lerobot" / "scripts" / "lerobot_train.py")
+        if kind == "heavy" and extra:
+            cmd = [
+                "uv", "run", "--extra", extra,
+                "python", train_script,
+            ]
+        else:
+            cmd = [sys.executable, train_script]
+
+        cmd.extend([
+            f"--dataset.repo_id={target_repo_id}",
+            f"--dataset.root={str(target_ds_path)}",
+            "--dataset.revision=v3.0",
+            f"--policy.type={req.policy_type}",
+            "--policy.device=cuda",
+            "--policy.push_to_hub=false",
+            f"--steps={req.steps}",
+            f"--batch_size={req.batch_size}",
+            f"--num_workers={req.num_workers}",
+            f"--seed={req.seed}",
+            f"--save_freq={req.save_freq}",
+            f"--log_freq={req.log_freq}",
+        ])
+
+        # Output directory
+        if req.output_dir:
+            cmd.append(f"--output_dir={req.output_dir}")
+
+        # WandB
+        if req.wandb_enabled:
+            cmd.extend(["--wandb.enable=true", f"--wandb.project={req.wandb_project}"])
+        else:
+            cmd.append("--wandb.enable=false")
+
+        # Image augmentation
+        if req.image_aug_enabled:
+            cmd.extend([
+                "--dataset.image_transforms.enable=true",
+                f"--dataset.image_transforms.max_num_transforms={req.image_aug_max_num}",
+            ])
+
+        # Per-policy params
+        if req.policy_type == "act":
+            cmd.extend([
+                f"--policy.chunk_size={req.act_chunk_size}",
+                f"--policy.n_action_steps={req.act_n_action_steps}",
+                f"--policy.dim_model={req.act_dim_model}",
+                f"--policy.n_heads={req.act_n_heads}",
+                f"--policy.use_vae={'true' if req.act_use_vae else 'false'}",
+                f"--policy.latent_dim={req.act_latent_dim}",
+                f"--policy.kl_weight={req.act_kl_weight}",
+                f"--policy.dropout={req.act_dropout}",
+                f"--policy.vision_backbone={req.act_vision_backbone}",
+            ])
+            if req.optimizer_lr is not None:
+                cmd.append(f"--policy.optimizer_lr={req.optimizer_lr}")
+            if req.optimizer_weight_decay is not None:
+                cmd.append(f"--policy.optimizer_weight_decay={req.optimizer_weight_decay}")
+
+        elif req.policy_type == "diffusion":
+            cmd.extend([
+                f"--policy.horizon={req.diff_horizon}",
+                f"--policy.n_action_steps={req.diff_n_action_steps}",
+                f"--policy.n_obs_steps={req.diff_n_obs_steps}",
+                f"--policy.noise_scheduler_type={req.diff_noise_scheduler}",
+                f"--policy.num_train_timesteps={req.diff_num_train_timesteps}",
+                f"--policy.prediction_type={req.diff_prediction_type}",
+                f"--policy.scheduler_warmup_steps={req.diff_scheduler_warmup_steps}",
+                f"--policy.vision_backbone={req.diff_vision_backbone}",
+            ])
+            if req.optimizer_lr is not None:
+                cmd.append(f"--policy.optimizer_lr={req.optimizer_lr}")
+            if req.optimizer_weight_decay is not None:
+                cmd.append(f"--policy.optimizer_weight_decay={req.optimizer_weight_decay}")
+
+        rc = _lerobot_run_subprocess(cmd, step, str(project_root), env, timeout=86400)
+
+        if _lerobot_pipeline["cancelled"]:
+            _lerobot_set_status(step, "cancelled")
+            return
+        if rc != 0:
+            _lerobot_set_status(step, "failed")
+            _lerobot_append_log(step, f"\n--- Exit code: {rc} ---\n")
+        else:
+            _lerobot_set_status(step, "completed")
+            _lerobot_append_log(step, "\n--- Training completed successfully ---\n")
+
+    except Exception as exc:
+        step = _lerobot_pipeline["current_step"] or "train"
+        _lerobot_append_log(step, f"\n--- LEROBOT TRAIN ERROR: {exc} ---\n")
+        _lerobot_set_status(step, "failed")
+    finally:
+        _lerobot_pipeline["running"] = False
+        _lerobot_pipeline["current_step"] = ""
+        _lerobot_pipeline["current_step_idx"] = -1
+
+
+@app.post("/api/lerobot/start")
+async def lerobot_start(req: LerobotTrainRequest, _=Depends(require_login)):
+    """Start LeRobot policy training."""
+    if _lerobot_pipeline["running"]:
+        raise HTTPException(status_code=400, detail="LeRobot pipeline already running")
+    if _pipeline["running"]:
+        raise HTTPException(status_code=400, detail="OpenPI pipeline is running. Cannot run both.")
+
+    if req.policy_type not in config.LEROBOT_POLICY_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unknown policy type: {req.policy_type}")
+
+    for name in LEROBOT_STEP_NAMES:
+        _lerobot_pipeline["steps"][name] = {"status": "pending", "logs": ""}
+    _lerobot_pipeline["running"] = True
+    _lerobot_pipeline["current_step"] = ""
+    _lerobot_pipeline["current_step_idx"] = -1
+    _lerobot_pipeline["cancelled"] = False
+    _lerobot_pipeline["wandb_url"] = ""
+    _lerobot_pipeline["config"] = req.dict()
+
+    threading.Thread(target=_run_lerobot_train_thread, args=(req,), daemon=True).start()
+    return {"ok": True}
+
+
+@app.get("/api/lerobot/status")
+async def lerobot_status(_=Depends(require_login)):
+    """Return LeRobot pipeline status."""
+    with _lerobot_lock:
+        steps_out = {}
+        for name in LEROBOT_STEP_NAMES:
+            s = _lerobot_pipeline["steps"][name]
+            steps_out[name] = {
+                "status": s["status"],
+                "logs": s["logs"][-20000:] if len(s["logs"]) > 20000 else s["logs"],
+            }
+        
+        return {
+            "running": _lerobot_pipeline["running"],
+            "current_step": _lerobot_pipeline["current_step"],
+            "current_step_idx": _lerobot_pipeline["current_step_idx"],
+            "steps": steps_out,
+            "wandb_url": _lerobot_pipeline["wandb_url"],
+            "cancelled": _lerobot_pipeline["cancelled"],
+            "config": _lerobot_pipeline.get("config", {}),
+            "pid": _lerobot_pipeline.get("pid"),
+            "pgid": _lerobot_pipeline.get("pgid"),
+            "kill_cmd": f"kill -- -{_lerobot_pipeline.get('pgid')}" if _lerobot_pipeline.get("pgid") else "",
+        }
+
+
+@app.post("/api/lerobot/cancel")
+async def lerobot_cancel(_=Depends(require_login)):
+    """Cancel the running LeRobot pipeline."""
+    _lerobot_pipeline["cancelled"] = True
+    proc = _lerobot_pipeline.get("process")
     if proc and proc.poll() is None:
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)

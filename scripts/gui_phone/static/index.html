@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -7,6 +8,7 @@
     <link rel="stylesheet" href="/static/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
+
 <body>
     <!-- Login -->
     <div id="login-view" class="view">
@@ -17,7 +19,10 @@
             </div>
             <form id="login-form">
                 <input type="password" id="password" placeholder="Access Password" required>
-                <button type="submit" class="btn btn-primary btn-large">Connect</button>
+                <div style="display: flex; gap: 10px; margin-top: 16px;">
+                    <button type="submit" class="btn btn-secondary btn-large" style="flex: 1;" onclick="window.enterMode='pc'">电脑端</button>
+                    <button type="submit" class="btn btn-primary btn-large" style="flex: 1;" onclick="window.enterMode='phone'">手机端</button>
+                </div>
             </form>
             <div id="login-error" class="error-text"></div>
         </div>
@@ -26,9 +31,12 @@
     <!-- App -->
     <div id="app-view" class="view hidden">
         <nav class="bottom-nav">
-            <button class="nav-item active" data-target="datasets"><span class="icon">🗂️</span><span class="label">Dataset</span></button>
-            <button class="nav-item" data-target="train"><span class="icon">⚙️</span><span class="label">Train</span></button>
-            <button class="nav-item" data-target="task"><span class="icon">🚀</span><span class="label">Task</span><span id="nav-gpu-badge" class="nav-gpu-badge hidden"></span></button>
+            <button class="nav-item active" data-target="datasets"><span class="icon">🗂️</span><span
+                    class="label">Dataset</span></button>
+            <button class="nav-item" data-target="train"><span class="icon">⚙️</span><span
+                    class="label">Train</span></button>
+            <button class="nav-item" data-target="task"><span class="icon">🚀</span><span class="label">Task</span><span
+                    id="nav-gpu-badge" class="nav-gpu-badge hidden"></span></button>
         </nav>
         <header class="app-header">
             <h1 id="page-title">Datasets</h1>
@@ -40,106 +48,369 @@
         </header>
         <!-- Status Panel -->
         <div id="status-panel" class="status-panel hidden">
-            <div class="status-panel-header"><h3>System Status</h3><button id="status-panel-close" class="close-panel-btn">✕</button></div>
+            <div class="status-panel-header">
+                <h3>System Status</h3><button id="status-panel-close" class="close-panel-btn">✕</button>
+            </div>
             <div id="status-panel-content" class="status-panel-body"></div>
         </div>
         <div id="status-panel-backdrop" class="status-panel-backdrop hidden"></div>
 
         <main class="content-area">
             <!-- Dataset Page -->
-            <section id="datasets" class="page active"><div id="datasets-list"></div></section>
+            <section id="datasets" class="page active">
+                <div id="datasets-list"></div>
+            </section>
 
-            <!-- ★ Train Page — Full pipeline configuration -->
+            <!-- ★ Train Page — Mode Selector + OpenPI / LeRobot forms -->
             <section id="train" class="page">
-                <!-- GPU Selection -->
-                <div class="pipe-section">
-                    <div class="pipe-section-title">GPU Selection <span class="pipe-hint" id="gpu-timer">auto-refresh 10s</span></div>
-                    <div class="gpu-grid" id="pipe-gpu-grid"><div class="loading-spinner"></div></div>
-                    <div class="pipe-selected-gpus">Selected: <span id="pipe-selected-text">loading...</span></div>
-                    <button class="btn btn-secondary btn-small" style="margin-top:6px" onclick="autoSelectFreeGPUs()">Auto-select Free GPUs</button>
+
+                <!-- ══ Training Mode Tabs ══ -->
+                <div class="train-mode-tabs">
+                    <button class="train-mode-tab active" id="tab-openpi" onclick="switchTrainMode('openpi')">
+                        <span class="train-tab-icon">🧠</span>
+                        <span class="train-tab-label">OpenPI</span>
+                        <span class="train-tab-sub">pi0 / pi05 系列</span>
+                    </button>
+                    <button class="train-mode-tab" id="tab-lerobot" onclick="switchTrainMode('lerobot')">
+                        <span class="train-tab-icon">🤖</span>
+                        <span class="train-tab-label">LeRobot</span>
+                        <span class="train-tab-sub">ACT / Diffusion / VLA</span>
+                    </button>
                 </div>
 
-                <!-- Dataset Selection -->
-                <div class="pipe-section">
-                    <div class="pipe-section-title">Dataset</div>
-                    <select id="pipe-dataset-select">
-                        <option value="" disabled selected>Loading datasets...</option>
-                    </select>
-                    <div class="pipe-ds-meta" id="pipe-ds-meta"></div>
-                </div>
-
-                <!-- Experiment Name -->
-                <div class="pipe-section">
-                    <div class="pipe-section-title">Experiment Name</div>
-                    <div class="pipe-row">
-                        <input type="text" id="pipe-exp-name" placeholder="auto-generated from dataset + date">
-                        <button class="btn btn-secondary btn-small" onclick="pipeAutoExpName()">Auto</button>
-                    </div>
-                </div>
-
-                <!-- Advanced Parameters (collapsible) -->
-                <div class="pipe-section">
-                    <div class="pipe-adv-toggle" onclick="togglePipeAdvanced()">
-                        <span id="pipe-adv-arrow">▶</span> Advanced Parameters
-                    </div>
-                    <div class="pipe-adv-panel" id="pipe-adv-panel">
-                        <div class="pipe-form-row">
-                            <label>config_name</label>
-                            <select id="pipe-config-name"></select>
+                <!-- ══════════════════════════════════════
+                     OpenPI Training Form (existing)
+                     ══════════════════════════════════════ -->
+                <div id="train-openpi" class="train-mode-panel">
+                    <!-- GPU Selection -->
+                    <div class="pipe-section">
+                        <div class="pipe-section-title">GPU Selection <span class="pipe-hint" id="gpu-timer">auto-refresh 10s</span></div>
+                        <div class="gpu-grid" id="pipe-gpu-grid">
+                            <div class="loading-spinner"></div>
                         </div>
+                        <div class="pipe-selected-gpus">Selected: <span id="pipe-selected-text">loading...</span></div>
+                        <button class="btn btn-secondary btn-small" style="margin-top:6px" onclick="autoSelectFreeGPUs()">Auto-select Free GPUs</button>
+                    </div>
+
+                    <!-- Dataset Selection -->
+                    <div class="pipe-section">
+                        <div class="pipe-section-title">Dataset</div>
+                        <select id="pipe-dataset-select">
+                            <option value="" disabled selected>Loading datasets...</option>
+                        </select>
+                        <div class="pipe-ds-meta" id="pipe-ds-meta"></div>
+                    </div>
+
+                    <!-- Experiment Name -->
+                    <div class="pipe-section">
+                        <div class="pipe-section-title">Experiment Name</div>
+                        <div class="pipe-row">
+                            <input type="text" id="pipe-exp-name" placeholder="auto-generated from dataset + date">
+                            <button class="btn btn-secondary btn-small" onclick="pipeAutoExpName()">Auto</button>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Parameters (collapsible) -->
+                    <div class="pipe-section">
+                        <div class="pipe-adv-toggle" onclick="togglePipeAdvanced()">
+                            <span id="pipe-adv-arrow">▶</span> Advanced Parameters
+                        </div>
+                        <div class="pipe-adv-panel" id="pipe-adv-panel">
+                            <div class="pipe-form-row">
+                                <label>config_name</label>
+                                <select id="pipe-config-name"></select>
+                            </div>
+                            <div class="pipe-form-row">
+                                <label>batch_size</label>
+                                <input type="number" id="pipe-batch-size" value="64" min="1">
+                            </div>
+                            <div class="pipe-form-row">
+                                <label>fsdp_devices</label>
+                                <input type="number" id="pipe-fsdp-devices" value="4" min="1">
+                            </div>
+                            <div class="pipe-form-row">
+                                <label>num_train_steps</label>
+                                <input type="number" id="pipe-num-train-steps" value="20000" min="1" step="1000">
+                            </div>
+                            <div class="pipe-form-row">
+                                <label>save_interval</label>
+                                <input type="number" id="pipe-save-interval" value="1000" min="100" step="100">
+                            </div>
+                            <div class="pipe-form-row">
+                                <label>min_range</label>
+                                <input type="number" id="pipe-min-range" value="0.1" min="0.01" step="0.01">
+                                <span class="pipe-hint">norm_stats clamp</span>
+                            </div>
+                            <div class="pipe-toggle-row">
+                                <span>wandb</span>
+                                <label class="pipe-toggle"><input type="checkbox" id="pipe-wandb" checked><span class="pipe-slider"></span></label>
+                            </div>
+                            <div class="pipe-toggle-row">
+                                <span>overwrite</span>
+                                <label class="pipe-toggle"><input type="checkbox" id="pipe-overwrite" checked><span class="pipe-slider"></span></label>
+                            </div>
+                            <div class="pipe-toggle-row">
+                                <span>resume</span>
+                                <label class="pipe-toggle"><input type="checkbox" id="pipe-resume"><span class="pipe-slider"></span></label>
+                            </div>
+                            <div class="pipe-toggle-row">
+                                <span>skip norm_stats</span>
+                                <label class="pipe-toggle"><input type="checkbox" id="pipe-skip-norm"><span class="pipe-slider"></span></label>
+                                <span class="pipe-hint">if already computed</span>
+                            </div>
+                            <div class="pipe-toggle-row">
+                                <span>skip postprocess</span>
+                                <label class="pipe-toggle"><input type="checkbox" id="pipe-skip-post"><span class="pipe-slider"></span></label>
+                            </div>
+
+                            <!-- ═══ Open-loop Eval (auto after train) ═══ -->
+                            <div class="lr-policy-params-title" style="margin-top:16px;padding-top:10px;border-top:1px solid var(--border)">🔬 Open-loop Eval (auto after train)</div>
+                            <div class="pipe-toggle-row">
+                                <span>skip eval</span>
+                                <label class="pipe-toggle"><input type="checkbox" id="pipe-skip-eval"><span class="pipe-slider"></span></label>
+                                <span class="pipe-hint">skip open-loop test</span>
+                            </div>
+                            <div class="pipe-form-row">
+                                <label>eval prompt</label>
+                                <input type="text" id="pipe-eval-prompt" value="pick and place" placeholder="task prompt for policy">
+                            </div>
+                            <div class="pipe-form-row">
+                                <label>eval episodes</label>
+                                <input type="text" id="pipe-eval-episodes" value="all" placeholder="0,1,2 or 'all'">
+                                <span class="pipe-hint">comma-sep or 'all'</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Start Button -->
+                    <div class="pipe-actions">
+                        <button class="btn btn-primary btn-large" id="pipe-btn-start" onclick="startPipeline()">🚀 Start OpenPI Pipeline</button>
+                    </div>
+                </div>
+
+                <!-- ══════════════════════════════════════
+                     LeRobot Training Form (NEW)
+                     ══════════════════════════════════════ -->
+                <div id="train-lerobot" class="train-mode-panel" style="display:none">
+                    <!-- GPU Selection (shared rendering target) -->
+                    <div class="pipe-section">
+                        <div class="pipe-section-title">GPU Selection <span class="pipe-hint">auto-refresh 10s</span></div>
+                        <div class="gpu-grid" id="lr-gpu-grid">
+                            <div class="loading-spinner"></div>
+                        </div>
+                        <div class="pipe-selected-gpus">Selected: <span id="lr-selected-text">loading...</span></div>
+                        <button class="btn btn-secondary btn-small" style="margin-top:6px" onclick="autoSelectFreeGPUs()">Auto-select Free GPUs</button>
+                    </div>
+
+                    <!-- Policy Type -->
+                    <div class="pipe-section">
+                        <div class="pipe-section-title">Policy Type</div>
+                        <div class="lr-policy-grid" id="lr-policy-grid">
+                            <!-- Rendered by JS -->
+                        </div>
+                        <div class="pipe-hint" id="lr-policy-hint" style="margin-top:6px"></div>
+                    </div>
+
+                    <!-- Dataset Selection (v3.0 _lerobot only) -->
+                    <div class="pipe-section">
+                        <div class="pipe-section-title">Dataset <span class="pipe-hint">v3.0 (_lerobot) required</span></div>
+                        <select id="lr-dataset-select">
+                            <option value="" disabled selected>Loading datasets...</option>
+                        </select>
+                        <div class="pipe-ds-meta" id="lr-ds-meta"></div>
+                    </div>
+
+                    <!-- Core Parameters -->
+                    <div class="pipe-section">
+                        <div class="pipe-section-title">Core Parameters</div>
                         <div class="pipe-form-row">
                             <label>batch_size</label>
-                            <input type="number" id="pipe-batch-size" value="64" min="1">
+                            <input type="number" id="lr-batch-size" value="8" min="1">
                         </div>
                         <div class="pipe-form-row">
-                            <label>fsdp_devices</label>
-                            <input type="number" id="pipe-fsdp-devices" value="4" min="1">
+                            <label>steps</label>
+                            <input type="number" id="lr-steps" value="100000" min="1" step="1000">
                         </div>
                         <div class="pipe-form-row">
-                            <label>num_train_steps</label>
-                            <input type="number" id="pipe-num-train-steps" value="20000" min="1" step="1000">
+                            <label>num_workers</label>
+                            <input type="number" id="lr-num-workers" value="2" min="0">
                         </div>
                         <div class="pipe-form-row">
-                            <label>save_interval</label>
-                            <input type="number" id="pipe-save-interval" value="1000" min="100" step="100">
+                            <label>seed</label>
+                            <input type="number" id="lr-seed" value="1000" min="0">
                         </div>
                         <div class="pipe-form-row">
-                            <label>min_range</label>
-                            <input type="number" id="pipe-min-range" value="0.1" min="0.01" step="0.01">
-                            <span class="pipe-hint">norm_stats clamp</span>
+                            <label>optimizer_lr</label>
+                            <input type="text" id="lr-optimizer-lr" placeholder="policy default">
+                            <span class="pipe-hint">ACT:1e-5 / DP:1e-4</span>
+                        </div>
+                        <div class="pipe-form-row">
+                            <label>weight_decay</label>
+                            <input type="text" id="lr-weight-decay" placeholder="policy default">
+                        </div>
+                    </div>
+
+                    <!-- Training Control -->
+                    <div class="pipe-section">
+                        <div class="pipe-section-title">Training Control</div>
+                        <div class="pipe-form-row">
+                            <label>save_freq</label>
+                            <input type="number" id="lr-save-freq" value="20000" min="100" step="1000">
+                            <span class="pipe-hint">checkpoint interval</span>
+                        </div>
+                        <div class="pipe-form-row">
+                            <label>log_freq</label>
+                            <input type="number" id="lr-log-freq" value="200" min="1" step="50">
+                        </div>
+                        <div class="pipe-form-row">
+                            <label>output_dir</label>
+                            <input type="text" id="lr-output-dir" placeholder="auto (outputs/train/...)">
                         </div>
                         <div class="pipe-toggle-row">
                             <span>wandb</span>
-                            <label class="pipe-toggle"><input type="checkbox" id="pipe-wandb" checked><span class="pipe-slider"></span></label>
+                            <label class="pipe-toggle"><input type="checkbox" id="lr-wandb"><span class="pipe-slider"></span></label>
+                        </div>
+                        <div class="pipe-form-row" id="lr-wandb-project-row" style="display:none">
+                            <label>wandb project</label>
+                            <input type="text" id="lr-wandb-project" value="lerobot">
                         </div>
                         <div class="pipe-toggle-row">
-                            <span>overwrite</span>
-                            <label class="pipe-toggle"><input type="checkbox" id="pipe-overwrite" checked><span class="pipe-slider"></span></label>
+                            <span>image augmentation</span>
+                            <label class="pipe-toggle"><input type="checkbox" id="lr-img-aug"><span class="pipe-slider"></span></label>
                         </div>
-                        <div class="pipe-toggle-row">
-                            <span>resume</span>
-                            <label class="pipe-toggle"><input type="checkbox" id="pipe-resume"><span class="pipe-slider"></span></label>
-                        </div>
-                        <div class="pipe-toggle-row">
-                            <span>skip norm_stats</span>
-                            <label class="pipe-toggle"><input type="checkbox" id="pipe-skip-norm"><span class="pipe-slider"></span></label>
-                            <span class="pipe-hint">if already computed</span>
-                        </div>
-                        <div class="pipe-toggle-row">
-                            <span>skip postprocess</span>
-                            <label class="pipe-toggle"><input type="checkbox" id="pipe-skip-post"><span class="pipe-slider"></span></label>
+                        <div class="pipe-form-row" id="lr-img-aug-num-row" style="display:none">
+                            <label>max transforms</label>
+                            <input type="number" id="lr-img-aug-num" value="3" min="1" max="6">
                         </div>
                     </div>
-                </div>
 
-                <!-- Start Button -->
-                <div class="pipe-actions">
-                    <button class="btn btn-primary btn-large" id="pipe-btn-start" onclick="startPipeline()">🚀 Start Training Pipeline</button>
+                    <!-- Per-Policy Advanced Section -->
+                    <div class="pipe-section">
+                        <div class="pipe-adv-toggle" onclick="toggleLrAdvanced()">
+                            <span id="lr-adv-arrow">▶</span> Policy-Specific Parameters
+                        </div>
+                        <div class="pipe-adv-panel" id="lr-adv-panel">
+
+                            <!-- ═══ ACT params ═══ -->
+                            <div id="lr-act-params">
+                                <div class="lr-policy-params-title">ACT Architecture</div>
+                                <div class="pipe-form-row">
+                                    <label>chunk_size</label>
+                                    <input type="number" id="lr-act-chunk-size" value="100" min="1">
+                                    <span class="pipe-hint">action prediction horizon</span>
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>n_action_steps</label>
+                                    <input type="number" id="lr-act-n-action-steps" value="100" min="1">
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>dim_model</label>
+                                    <input type="number" id="lr-act-dim-model" value="512" min="64" step="64">
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>n_heads</label>
+                                    <input type="number" id="lr-act-n-heads" value="8" min="1">
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>vision_backbone</label>
+                                    <select id="lr-act-backbone">
+                                        <option value="resnet18" selected>resnet18</option>
+                                        <option value="resnet34">resnet34</option>
+                                        <option value="resnet50">resnet50</option>
+                                    </select>
+                                </div>
+                                <div class="pipe-toggle-row">
+                                    <span>use_vae</span>
+                                    <label class="pipe-toggle"><input type="checkbox" id="lr-act-use-vae" checked><span class="pipe-slider"></span></label>
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>latent_dim</label>
+                                    <input type="number" id="lr-act-latent-dim" value="32" min="1">
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>kl_weight</label>
+                                    <input type="number" id="lr-act-kl-weight" value="10" min="0" step="1">
+                                    <span class="pipe-hint">VAE KL loss weight</span>
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>dropout</label>
+                                    <input type="number" id="lr-act-dropout" value="0.1" min="0" max="1" step="0.05">
+                                </div>
+                            </div>
+
+                            <!-- ═══ Diffusion params ═══ -->
+                            <div id="lr-diff-params" style="display:none">
+                                <div class="lr-policy-params-title">Diffusion Architecture</div>
+                                <div class="pipe-form-row">
+                                    <label>horizon</label>
+                                    <input type="number" id="lr-diff-horizon" value="16" min="1">
+                                    <span class="pipe-hint">prediction horizon</span>
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>n_action_steps</label>
+                                    <input type="number" id="lr-diff-n-action-steps" value="8" min="1">
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>n_obs_steps</label>
+                                    <input type="number" id="lr-diff-n-obs-steps" value="2" min="1">
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>noise_scheduler</label>
+                                    <select id="lr-diff-noise-sched">
+                                        <option value="DDPM" selected>DDPM</option>
+                                        <option value="DDIM">DDIM</option>
+                                    </select>
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>num_train_timesteps</label>
+                                    <input type="number" id="lr-diff-timesteps" value="100" min="1">
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>prediction_type</label>
+                                    <select id="lr-diff-pred-type">
+                                        <option value="epsilon" selected>epsilon</option>
+                                        <option value="sample">sample</option>
+                                    </select>
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>warmup_steps</label>
+                                    <input type="number" id="lr-diff-warmup" value="500" min="0" step="100">
+                                </div>
+                                <div class="pipe-form-row">
+                                    <label>vision_backbone</label>
+                                    <select id="lr-diff-backbone">
+                                        <option value="resnet18" selected>resnet18</option>
+                                        <option value="resnet34">resnet34</option>
+                                        <option value="resnet50">resnet50</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Start Button -->
+                    <div class="pipe-actions">
+                        <button class="btn btn-primary btn-large" id="lr-btn-start" onclick="startLerobotTrain()">🚀 Start LeRobot Training</button>
+                    </div>
                 </div>
             </section>
 
             <!-- ★ Task Page — Pipeline execution monitor -->
             <section id="task" class="page">
+                <!-- ══ Task Mode Tabs ══ -->
+                <div class="train-mode-tabs">
+                    <button class="train-mode-tab active" id="task-tab-openpi" onclick="switchTaskMode('openpi')">
+                        <span class="train-tab-icon">🧠</span>
+                        <span class="train-tab-label">OpenPI</span>
+                        <span class="train-tab-sub">pi0 / pi05 任务</span>
+                    </button>
+                    <button class="train-mode-tab" id="task-tab-lerobot" onclick="switchTaskMode('lerobot')">
+                        <span class="train-tab-icon">🤖</span>
+                        <span class="train-tab-label">LeRobot</span>
+                        <span class="train-tab-sub">ACT / VLA 任务</span>
+                    </button>
+                </div>
+
                 <!-- GPU Strip -->
                 <div id="gpu-strip" class="gpu-strip"></div>
 
@@ -147,36 +418,38 @@
                 <div class="pipe-exec" id="pipe-exec">
                     <div class="pipe-section-title" style="margin-bottom:10px">Pipeline Execution</div>
 
-                    <!-- Step 1 -->
-                    <div class="pipe-step" id="step-compute_norm_stats">
-                        <div class="pipe-step-header">
-                            <div class="pipe-step-num" id="psn-0">1</div>
-                            <div class="pipe-step-title">Compute norm_stats</div>
-                            <div class="pipe-step-badge pending" id="psb-compute_norm_stats">pending</div>
+                    <div id="pipe-exec-container">
+                        <!-- Step 1 -->
+                        <div class="pipe-step" id="step-compute_norm_stats">
+                            <div class="pipe-step-header">
+                                <div class="pipe-step-num" id="psn-0">1</div>
+                                <div class="pipe-step-title">Compute norm_stats</div>
+                                <div class="pipe-step-badge pending" id="psb-compute_norm_stats">pending</div>
+                            </div>
+                            <div class="pipe-step-log" id="psl-compute_norm_stats"></div>
                         </div>
-                        <div class="pipe-step-log" id="psl-compute_norm_stats"></div>
-                    </div>
 
-                    <!-- Step 2 -->
-                    <div class="pipe-step" id="step-postprocess_norm_stats">
-                        <div class="pipe-step-header">
-                            <div class="pipe-step-num" id="psn-1">2</div>
-                            <div class="pipe-step-title">Postprocess norm_stats</div>
-                            <div class="pipe-step-badge pending" id="psb-postprocess_norm_stats">pending</div>
+                        <!-- Step 2 -->
+                        <div class="pipe-step" id="step-postprocess_norm_stats">
+                            <div class="pipe-step-header">
+                                <div class="pipe-step-num" id="psn-1">2</div>
+                                <div class="pipe-step-title">Postprocess norm_stats</div>
+                                <div class="pipe-step-badge pending" id="psb-postprocess_norm_stats">pending</div>
+                            </div>
+                            <div class="pipe-step-log" id="psl-postprocess_norm_stats"></div>
                         </div>
-                        <div class="pipe-step-log" id="psl-postprocess_norm_stats"></div>
-                    </div>
 
-                    <!-- Step 3 -->
-                    <div class="pipe-step" id="step-train">
-                        <div class="pipe-step-header">
-                            <div class="pipe-step-num" id="psn-2">3</div>
-                            <div class="pipe-step-title">Train</div>
-                            <div class="pipe-step-badge pending" id="psb-train">pending</div>
-                        </div>
-                        <div class="pipe-step-log" id="psl-train"></div>
-                        <div class="pipe-wandb-link" id="pipe-wandb-link" style="display:none">
-                            WandB: <a id="pipe-wandb-url" href="#" target="_blank"></a>
+                        <!-- Step 3 -->
+                        <div class="pipe-step" id="step-train">
+                            <div class="pipe-step-header">
+                                <div class="pipe-step-num" id="psn-2">3</div>
+                                <div class="pipe-step-title">Train</div>
+                                <div class="pipe-step-badge pending" id="psb-train">pending</div>
+                            </div>
+                            <div class="pipe-step-log" id="psl-train"></div>
+                            <div class="pipe-wandb-link" id="pipe-wandb-link" style="display:none">
+                                WandB: <a id="pipe-wandb-url" href="#" target="_blank"></a>
+                            </div>
                         </div>
                     </div>
 
@@ -189,7 +462,8 @@
 
                     <!-- Cancel button -->
                     <div class="pipe-actions" style="margin-top:10px">
-                        <button class="btn btn-danger" id="pipe-btn-cancel" onclick="cancelPipeline()" disabled>Cancel Pipeline</button>
+                        <button class="btn btn-danger" id="pipe-btn-cancel" onclick="cancelPipeline()" disabled>Cancel
+                            Pipeline</button>
                     </div>
                 </div>
 
@@ -201,8 +475,12 @@
                 <div id="log-viewer" class="overlay hidden full-height">
                     <div class="overlay-content">
                         <div class="overlay-header">
-                            <div class="header-status"><h2 id="log-title">Logs</h2><span id="log-status-badge" class="badge"></span></div>
-                            <div class="header-actions"><button id="stop-job-btn" class="btn btn-danger btn-small hidden">Stop</button><button class="close-overlay">✕</button></div>
+                            <div class="header-status">
+                                <h2 id="log-title">Logs</h2><span id="log-status-badge" class="badge"></span>
+                            </div>
+                            <div class="header-actions"><button id="stop-job-btn"
+                                    class="btn btn-danger btn-small hidden">Stop</button><button
+                                    class="close-overlay">✕</button></div>
                         </div>
                         <div id="log-container" class="terminal"></div>
                     </div>
@@ -223,6 +501,7 @@
                 <span id="labeler-ds-name">Dataset</span>
                 <span id="labeler-count" class="labeler-count"></span>
             </div>
+            <button class="btn btn-secondary btn-small" onclick="labelAll()" style="margin-right: 10px;">统一标注</button>
             <select id="labeler-filter" class="labeler-filter-select">
                 <option value="all">All</option>
                 <option value="unlabeled">Unlabeled</option>
@@ -237,13 +516,16 @@
     <!-- Data Ops overlay -->
     <div id="data-ops-overlay" class="overlay hidden full-height">
         <div class="overlay-content">
-            <div class="overlay-header"><h2 id="ops-title">Data Op</h2><button class="close-overlay">✕</button></div>
+            <div class="overlay-header">
+                <h2 id="ops-title">Data Op</h2><button class="close-overlay">✕</button>
+            </div>
             <div class="form-container" id="ops-form"></div>
             <div class="overlay-actions"><button id="btn-run-ops" class="btn btn-primary">Run</button></div>
         </div>
     </div>
 
     <div id="toast" class="toast hidden"></div>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=4"></script>
 </body>
+
 </html>

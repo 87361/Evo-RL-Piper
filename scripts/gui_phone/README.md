@@ -13,4 +13,7 @@ export all_proxy=socks5://127.0.0.1:17891
 
 uv pip install -r requirements.txt
 
-WEB_PORT=3389 nohup uv run server.py > server.log 2>&1 &
+# 后续启动命令
+WEB_PORT=3389 nohup python server.py > server.log 2>&1 &
+
+TODO: 检查为什么用uv启动不行，只能用python启动
