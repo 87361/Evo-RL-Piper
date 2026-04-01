@@ -14,8 +14,9 @@ PYTHONPATH=src python scripts/gui/episode_review/main.py --host 127.0.0.1 --port
 
 ```bash
 tmux new-session -d -s gui_phone \
-  "cd /data/vepfs/users/intern/lingyue.yang/Evo-RL-Piper/scripts/gui_phone \
+  "cd /data/vepfs/users/intern/lingyue.yang/Evo-RL-Piper \
    && source .venv/bin/activate \
+   && cd scripts/gui_phone \
    && WEB_PORT=3389 python server.py 2>&1 | tee server.log"
 ```
 
@@ -35,8 +36,9 @@ tmux kill-session -t gui_phone 2>/dev/null
 
 # 2. 启动新会话
 tmux new-session -d -s gui_phone \
-  "cd /data/vepfs/users/intern/lingyue.yang/Evo-RL-Piper/scripts/gui_phone \
+  "cd /data/vepfs/users/intern/lingyue.yang/Evo-RL-Piper \
    && source .venv/bin/activate \
+   && cd scripts/gui_phone \
    && WEB_PORT=3389 python server.py 2>&1 | tee server.log"
 
 # 3. 验证服务已启动
@@ -176,6 +178,25 @@ python src/lerobot/scripts/lerobot_train.py \
   --num_workers=2
 ```
 
+断点续训：
+
+1. 启动一个新的 tmux 会话，防止意外中断
+
+tmux new-session -s resume_train
+
+2. (在 tmux 中) 进入目录并激活环境和环境变量
+
+cd /data/vepfs/users/intern/lingyue.yang/Evo-RL-Piper
+source .venv/bin/activate
+export PYTHONPATH=src HF_ENDPOINT=https://hf-mirror.com
+
+3. 执行续训命令 (指向最后保存的 last checkpoint 中的 pretrained_model 目录)
+
+python src/lerobot/scripts/lerobot_train.py \
+  --config_path=/data/vepfs/users/intern/lingyue.yang/Evo-RL-Piper/outputs/train/2026-03-31/05-52-44_act/checkpoints/last/pretrained_model/train_config.json \
+  --resume=true
+
+
 #### B: 训练大型依赖模型 (SmolVLA / XVLA)
 
 ```bash
@@ -272,21 +293,21 @@ CUDA_VISIBLE_DEVICES=0,1,4,5 uv run --active --no-sync scripts/train.py pi05_alo
 
 ## 在火山云引擎H20队列启动训练
 入口命令：
-cd /drobotics-ailab/lingyue.yang/Evo-RL-Piper/third_party/openpi
+cd /drobotics-ailab/intern/lingyue.yang/Evo-RL-Piper/third_party/openpi
 source .venv/bin/activate
 
 python scripts/train.py pi05_aloha_wbcd_4cam_lora --project-name=EvoRL-Piper --exp-name=evorl_pi05_lora_alicia_dual_piper_0330_merged_260331_h20 --batch-size=64 --fsdp-devices=4 --num-train-steps=20000 --save-interval=2000 --wandb-enabled
 
 环境变量：
-HF_HOME = /drobotics-ailab/lingyue.yang/cache/huggingface
-HUGGINGFACE_HUB_CACHE = /drobotics-ailab/lingyue.yang/cache/huggingface/hub
-TRANSFORMERS_CACHE = /drobotics-ailab/lingyue.yang/cache/huggingface/transformers
-TORCH_HOME = /drobotics-ailab/lingyue.yang/cache/torch
-UV_CACHE_DIR = /drobotics-ailab/lingyue.yang/cache/uv
+HF_HOME = /drobotics-ailab/intern/lingyue.yang/cache/huggingface
+HUGGINGFACE_HUB_CACHE = /drobotics-ailab/intern/lingyue.yang/cache/huggingface/hub
+TRANSFORMERS_CACHE = /drobotics-ailab/intern/lingyue.yang/cache/huggingface/transformers
+TORCH_HOME = /drobotics-ailab/intern/lingyue.yang/cache/torch
+UV_CACHE_DIR = /drobotics-ailab/intern/lingyue.yang/cache/uv
 HF_ENDPOINT = https://hf-mirror.com
 
 挂载的共享文件系统：vePFS 
-容器内访问路径 /drobotics-ailab/lingyue.yang
+容器内访问路径 /drobotics-ailab/intern/lingyue.yang
 
 
 
@@ -335,7 +356,7 @@ python scripts/open_loop_eval.py \
 
 ### 运行 LeRobot 模型的开环测试 (ACT/Diffusion/VLA)
 
-与 OpenPI 的开环测试相似，我们也支持对基于 LeRobot 训练得到的模型执行一键开环测试并生成曲线。这会自动验证策略在前向推理和动作 Chunking 控制上的拟合程度。
+验证策略在前向推理和动作 Chunking 控制上的拟合程度。
 
 ```bash
 # 开启 tmux (可选但推荐)
@@ -346,20 +367,20 @@ cd /data/vepfs/users/intern/lingyue.yang/Evo-RL-Piper
 source .venv/bin/activate
 export HF_ENDPOINT=https://hf-mirror.com
 export PYTHONPATH=src
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=7
 
 # 执行 LeRobot 开环测试脚本
 python scripts/lerobot_open_loop_eval.py \
-  --checkpoint-dir outputs/train/2026-03-31/05-52-44_act/checkpoints/060000 \
+  --checkpoint-dir outputs/train/2026-03-31/05-52-44_act/checkpoints/100000 \
   --repo-id alicia_dual_piper_0330_merged_lerobot \
   --dataset-root /data/vepfs/users/intern/lingyue.yang/datasets/WBCD/WBCD \
   --episodes 0,1,2 \
   --device cuda \
-  --output-dir tmp/open_loop_eval_lerobot 2>&1 | tee tmp/open_loop_eval_lerobot.log
+  --output-dir tmp/open_loop_eval_lerobot_100000 2>&1 | tee tmp/open_loop_eval_lerobot_100000.log
 ```
 
 **关键参数说明：**
-- `--checkpoint-dir`: 你的 LeRobot checkpoint 目录（需要指向到具体 step 层级例如 `checkpoints/060000`）。
+- `--checkpoint-dir`: 你的 LeRobot checkpoint 目录（需要指向到具体 step 层级例如 `checkpoints/100000`）。
 - `--repo-id`: 你在 V3.0 转换后的数据集文件夹名称。
 - `--dataset-root`: 存放该数据集的上一级父目录绝对路径。
 - `--episodes`: 测试片段序号，格式同上。

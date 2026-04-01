@@ -30,7 +30,10 @@ if str(REPO_ROOT / "src") not in sys.path:
 import torch
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.policies.factory import get_policy_class, make_pre_post_processors
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+try:
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+except ImportError:
+    from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 import multiprocessing
 
 def parse_args() -> argparse.Namespace:
@@ -160,6 +163,7 @@ def save_trajectory_plots(
 def evaluate_episode(
     policy,
     preprocessor,
+    postprocessor,
     dataset,
     episode_index: int,
     action_chunk_idx: int,
@@ -210,6 +214,9 @@ def evaluate_episode(
 
         dt = time.monotonic() - t0
         infer_times.append(dt)
+
+        # Unnormalize predicted actions from MEAN_STD space back to physical space
+        action_pred = postprocessor(action_pred)
 
         if isinstance(action_pred, torch.Tensor):
             action_pred = action_pred.cpu().numpy()
@@ -280,7 +287,8 @@ def main():
     except ImportError:
         from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 
-    dataset = LeRobotDataset(args.repo_id, root=str(args.dataset_root), delta_timestamps=dt)
+    dataset_path = args.dataset_root / args.repo_id
+    dataset = LeRobotDataset(args.repo_id, root=str(dataset_path), delta_timestamps=dt)
     n_episodes = len(dataset.meta.episodes)
     print(f"Dataset has {n_episodes} episodes, {len(dataset)} total frames.\n")
 
@@ -305,7 +313,7 @@ def main():
     for ep_idx in episode_indices:
         print(f"\n--- Episode {ep_idx} ---")
         ep_result = evaluate_episode(
-            policy, preprocessor, dataset, ep_idx,
+            policy, preprocessor, postprocessor, dataset, ep_idx,
             args.action_chunk_index, args.max_steps_per_episode, args.device
         )
 
